@@ -164,19 +164,24 @@ table {
 
 th {
   background: #f8fafc;
-  padding: 1rem;
+  padding: 1rem 1.25rem;
   font-weight: 700;
   color: var(--text-primary);
   border-bottom: 2px solid #e2e8f0;
   position: sticky;
   top: 0;
   z-index: 10;
+  white-space: nowrap;
+  /* 글씨 밀림 방지 */
 }
 
 td {
-  padding: 0.875rem 1rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid #f1f5f9;
   color: var(--text-primary);
+  white-space: nowrap;
+  /* 글씨 밀림 방지 */
+  min-width: 80px;
 }
 
 tr:nth-child(even) {
