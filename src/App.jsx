@@ -174,8 +174,8 @@ function App() {
                             pointId: pointId,
                             count: count,
                             winnerSpecies: '',
-                            maxHeight: maxH !== null ? Math.round(maxH) : '',
-                            avgHeight: avgH !== null ? Math.round(avgH) : ''
+                            maxHeight: '',
+                            avgHeight: ''
                         });
                     });
 
