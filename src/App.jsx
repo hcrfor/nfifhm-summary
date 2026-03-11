@@ -317,7 +317,12 @@ function App() {
         const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
         XLSX.utils.book_append_sheet(wb, ws2, '대경목 출현 요약');
 
-        XLSX.writeFile(wb, '임목조사_모니터링_보고서.xlsx');
+        // 파일명 생성 로직: 첫 번째 표본점 번호의 마지막 자리를 제외하고 '_모니터링 요약'을 붙임
+        const firstPointId = dataMonitoring.length > 0 ? String(dataMonitoring[0].pointId).trim() : '';
+        const fileNamePrefix = firstPointId ? firstPointId.slice(0, -1) : '임목조사';
+        const finalFileName = `${fileNamePrefix}_모니터링 요약.xlsx`;
+
+        XLSX.writeFile(wb, finalFileName);
     };
 
     return (
