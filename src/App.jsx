@@ -146,7 +146,7 @@ function App() {
 
                     // 각 표본점별 모든 나무에서 최대 수고 정보 찾기
                     let pointMaxH = -1;
-                    let pointMaxHName = '';
+                    let winnerSpeciesList = [];
 
                     sortedSpeciesNames.forEach(speciesName => {
                         if (!speciesName || speciesName === 'undefined') return;
@@ -163,9 +163,13 @@ function App() {
                         pointCountTotal += count;
                         pointHeights.push(...heights);
 
-                        if (maxH !== null && maxH > pointMaxH) {
-                            pointMaxH = maxH;
-                            pointMaxHName = speciesName;
+                        if (maxH !== null) {
+                            if (maxH > pointMaxH) {
+                                pointMaxH = maxH;
+                                winnerSpeciesList = [speciesName];
+                            } else if (maxH === pointMaxH) {
+                                winnerSpeciesList.push(speciesName);
+                            }
                         }
 
                         pointSpeciesList.push({
@@ -183,13 +187,7 @@ function App() {
                     const pTotalMaxH = pointHeights.length > 0 ? _.max(pointHeights) : null;
                     const pTotalAvgH = pointHeights.length > 0 ? _.mean(pointHeights) : null;
 
-                    let winnerNames = '';
-                    if (pTotalMaxH !== null) {
-                        winnerNames = pointSpeciesList
-                            .filter(s => s.maxHeight !== '' && Number(s.maxHeight) === Math.round(pTotalMaxH))
-                            .map(s => s.label)
-                            .join(', ');
-                    }
+                    const winnerNames = winnerSpeciesList.join(', ');
 
                     const subtotalRow = {
                         type: 'subtotal',
