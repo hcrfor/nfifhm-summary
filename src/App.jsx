@@ -133,10 +133,33 @@ function App() {
                 const monitoringSummary = [];
 
                 const groupedByPoint = _.groupBy(treeProcessed, 'pointId');
-                const sortedPoints = Object.keys(groupedByPoint).sort();
+                
+                // 모든 소스(임목, 일반, 임분)에서 포인트 ID 수집 및 1,2,3,4 확장
+                const allPointIdsFound = new Set();
+                treeProcessed.forEach(t => allPointIdsFound.add(t.pointId));
+                Object.keys(generalMap).forEach(p => allPointIdsFound.add(p));
+                Object.keys(standMap).forEach(p => allPointIdsFound.add(p));
+
+                const expandedPointsSet = new Set();
+                allPointIdsFound.forEach(pid => {
+                    const sPid = String(pid).trim();
+                    if (sPid && sPid !== 'undefined') {
+                        const base = sPid.slice(0, -1);
+                        if (base) {
+                            expandedPointsSet.add(base + '1');
+                            expandedPointsSet.add(base + '2');
+                            expandedPointsSet.add(base + '3');
+                            expandedPointsSet.add(base + '4');
+                        } else {
+                            // 베이스가 없는 특이 케이스는 그대로 추가
+                            expandedPointsSet.add(sPid);
+                        }
+                    }
+                });
+                const sortedPoints = Array.from(expandedPointsSet).sort();
 
                 sortedPoints.forEach(pointId => {
-                    const pointData = groupedByPoint[pointId];
+                    const pointData = groupedByPoint[pointId] || [];
                     const groupedBySpecies = _.groupBy(pointData, 'species');
                     const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
 
@@ -239,7 +262,7 @@ function App() {
                 setDataSummary(topWinnerSummary);
                 setDataMonitoring(monitoringSummary);
 
-                // --- 대경목 logic (기존 유지) ---
+                // --- 대경목 logic (모든 탭 요구사항 반영하여 sortedPoints 기준으로 재구성) ---
                 const largeTrees = treeProcessed.filter(item => {
                     const dbh = parseFloat(item.dbh);
                     const note = String(item.note).toUpperCase();
@@ -248,18 +271,40 @@ function App() {
                     return isDbhOk && isNoteOk;
                 });
 
-                const sortedLargeTrees = _.orderBy(largeTrees,
-                    ['pointId', 'species', (item) => parseFloat(item.dbh)],
-                    ['asc', 'asc', 'desc']
-                ).map(item => ({
-                    pointId: item.pointId,
-                    species: item.species,
-                    dbh: item.dbh,
-                    combined: `${item.species}${item.dbh}`,
-                    dist: item.dist,
-                    azimuth: item.azimuth,
-                    note: (item.note === 'undefined' ? '' : item.note)
-                }));
+                const largeTreesByPoint = _.groupBy(largeTrees, 'pointId');
+                const sortedLargeTrees = [];
+
+                sortedPoints.forEach(pointId => {
+                    const treeList = largeTreesByPoint[pointId] || [];
+                    if (treeList.length > 0) {
+                        const sortedInPoint = _.orderBy(treeList, 
+                            ['species', (item) => parseFloat(item.dbh)], 
+                            ['asc', 'desc']
+                        );
+                        sortedInPoint.forEach(item => {
+                            sortedLargeTrees.push({
+                                pointId: item.pointId,
+                                species: item.species,
+                                dbh: item.dbh,
+                                combined: `${item.species}${item.dbh}`,
+                                dist: item.dist,
+                                azimuth: item.azimuth,
+                                note: (item.note === 'undefined' ? '' : item.note)
+                            });
+                        });
+                    } else {
+                        // 대경목이 없는 포인트도 빈 줄로 추가 (모든 탭에서 포인트 번호가 보이도록)
+                        sortedLargeTrees.push({
+                            pointId: pointId,
+                            species: '',
+                            dbh: '',
+                            combined: '',
+                            dist: '',
+                            azimuth: '',
+                            note: ''
+                        });
+                    }
+                });
 
                 setData2(sortedLargeTrees);
                 setLoading(false);
