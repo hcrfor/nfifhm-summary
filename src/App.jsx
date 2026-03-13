@@ -53,9 +53,28 @@ function App() {
                 // 공통 헬퍼 함수들 (강화된 버전)
                 const clean = (str) => String(str || '').replace(/[^a-zA-Z0-9가-힣]/g, '');
 
+                // 엑셀 범위(!ref)가 잘못되어 데이터가 잘리는 문제 해결을 위한 함수
+                const updateRange = (ws) => {
+                    if (!ws) return;
+                    const keys = Object.keys(ws).filter(k => k && k[0] !== '!');
+                    if (keys.length === 0) return;
+                    let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+                    keys.forEach(key => {
+                        try {
+                            const cell = XLSX.utils.decode_cell(key);
+                            if (cell.r < minR) minR = cell.r;
+                            if (cell.r > maxR) maxR = cell.r;
+                            if (cell.c < minC) minC = cell.c;
+                            if (cell.c > maxC) maxC = cell.c;
+                        } catch (e) {}
+                    });
+                    if (minR !== Infinity) {
+                        ws['!ref'] = XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: maxR, c: maxC } });
+                    }
+                };
+
                 const getCol = (row, patterns, strict = false) => {
                     const keys = Object.keys(row);
-                    // 1. 우선 순위 패턴 매칭 (정확도 향상)
                     for (const pattern of patterns) {
                         const cleanP = clean(pattern);
                         const foundKey = keys.find(key => {
@@ -78,16 +97,15 @@ function App() {
                     if (!actualSheetName) return [];
 
                     const ws = wb.Sheets[actualSheetName];
+                    updateRange(ws); // !!! 중요: 시트 범위 강제 재계산
+
                     const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
                     let headerIdx = -1;
                     
-                    // 헤더 감지 로직 강화
-                    for (let i = 0; i < Math.min(allRows.length, 20); i++) {
+                    for (let i = 0; i < Math.min(allRows.length, 25); i++) {
                         if (!allRows[i]) continue;
                         const rowStr = allRows[i].map(c => clean(c)).join('|');
-                        // 헤더 키워드 중 2개 이상이 발견되면 헤더 행으로 간주 (정확도 확보)
-                        const matchCount = headerKeywords.filter(k => rowStr.includes(clean(k))).length;
-                        if (matchCount >= 1) {
+                        if (headerKeywords.some(k => rowStr.includes(clean(k)))) {
                             headerIdx = i;
                             break;
                         }
@@ -96,7 +114,7 @@ function App() {
                     return XLSX.utils.sheet_to_json(ws, { range: headerIdx, raw: false, defval: '' });
                 };
 
-                // 타입별 시트/헤더 키워드 설정 (보강)
+                // 타입별 시트/헤더 키워드 설정
                 const isFHM = type === 'FHM';
                 const treeSheetKeywords = ['임목조사표', '임목조사', 'Tree'];
                 const generalSheetKeywords = ['일반정보', '기본정보', 'General'];
