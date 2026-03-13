@@ -144,24 +144,23 @@ function App() {
                 const expandedPointsSet = new Set(allPointIdsFound);
                 allPointIdsFound.forEach(pid => {
                     const sPid = String(pid).trim();
-                    if (sPid && sPid !== 'undefined' && sPid.length > 0) {
-                        const lastChar = sPid.slice(-1);
-                        // 서브플롯(1~4) 형태인 경우에만 1,2,3,4를 자동으로 생성 (다른 번호 체계 훼손 방지)
-                        if (['1', '2', '3', '4'].includes(lastChar)) {
-                            const base = sPid.slice(0, -1);
-                            if (base) {
-                                expandedPointsSet.add(base + '1');
-                                expandedPointsSet.add(base + '2');
-                                expandedPointsSet.add(base + '3');
-                                expandedPointsSet.add(base + '4');
-                            }
-                        }
+                    if (!sPid || sPid === 'undefined' || sPid.length === 0) return;
+                    
+                    const lastChar = sPid.slice(-1);
+                    // 1~4로 끝나는 서브플롯 번호인지 판단하여 그에 맞는 베이스(클러스터ID) 추출
+                    const base = (['1', '2', '3', '4'].includes(lastChar)) ? sPid.slice(0, -1) : sPid;
+                    
+                    if (base) {
+                        expandedPointsSet.add(base + '1');
+                        expandedPointsSet.add(base + '2');
+                        expandedPointsSet.add(base + '3');
+                        expandedPointsSet.add(base + '4');
                     }
                 });
                 const summaryPoints = Array.from(expandedPointsSet).sort();
 
-                // 2-1. 모니터링 요약 데이터 구성 (원본 데이터 포인트만)
-                originalPoints.forEach(pointId => {
+                // 2-1. 모니터링 요약 데이터 구성 (전체 포인트 대상)
+                summaryPoints.forEach(pointId => {
                     const pointData = groupedByPoint[pointId] || [];
                     const groupedBySpecies = _.groupBy(pointData, 'species');
                     const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
