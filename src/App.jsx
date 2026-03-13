@@ -140,25 +140,69 @@ function App() {
                 Object.keys(generalMap).forEach(p => allPointIdsFound.add(p));
                 Object.keys(standMap).forEach(p => allPointIdsFound.add(p));
 
-                const expandedPointsSet = new Set();
+                const originalPoints = Array.from(allPointIdsFound).sort();
+                const expandedPointsSet = new Set(allPointIdsFound);
                 allPointIdsFound.forEach(pid => {
                     const sPid = String(pid).trim();
-                    if (sPid && sPid !== 'undefined') {
+                    if (sPid && sPid !== 'undefined' && sPid.length > 0) {
                         const base = sPid.slice(0, -1);
                         if (base) {
                             expandedPointsSet.add(base + '1');
                             expandedPointsSet.add(base + '2');
                             expandedPointsSet.add(base + '3');
                             expandedPointsSet.add(base + '4');
-                        } else {
-                            // 베이스가 없는 특이 케이스는 그대로 추가
-                            expandedPointsSet.add(sPid);
                         }
                     }
                 });
-                const sortedPoints = Array.from(expandedPointsSet).sort();
+                const summaryPoints = Array.from(expandedPointsSet).sort();
 
-                sortedPoints.forEach(pointId => {
+                // 2-1. 모니터링 요약 데이터 구성 (원본 데이터 포인트만)
+                originalPoints.forEach(pointId => {
+                    const pointData = groupedByPoint[pointId] || [];
+                    const groupedBySpecies = _.groupBy(pointData, 'species');
+                    const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
+
+                    let pCount = 0;
+                    let pHeights = [];
+                    let pWinnerSpeciesList = [];
+                    let pMaxH = -1;
+
+                    sortedSpeciesNames.forEach(speciesName => {
+                        if (!speciesName || speciesName === 'undefined') return;
+                        const rows = groupedBySpecies[speciesName];
+                        const hs = rows.map(r => parseFloat(r.height)).filter(h => !isNaN(h));
+                        pCount += rows.length;
+                        pHeights.push(...hs);
+                        const mx = hs.length > 0 ? _.max(hs) : null;
+                        if (mx !== null) {
+                            if (mx > pMaxH) { pMaxH = mx; pWinnerSpeciesList = [speciesName]; }
+                            else if (mx === pMaxH) { pWinnerSpeciesList.push(speciesName); }
+                        }
+                    });
+
+                    const tMaxH = pHeights.length > 0 ? _.max(pHeights) : null;
+                    const tAvgH = pHeights.length > 0 ? _.mean(pHeights) : null;
+                    const sData = standMap[pointId] || {};
+                    
+                    monitoringSummary.push({
+                        pointId: pointId,
+                        landUse: generalMap[pointId] || '',
+                        fclass: sData.fclass || '',
+                        regen: sData.regen || '',
+                        ftype: sData.ftype || '',
+                        dclass: sData.dclass || '',
+                        aclas: sData.aclas || '',
+                        totalStems: pCount,
+                        maxHSpecies: pWinnerSpeciesList.join(', '),
+                        maxH: tMaxH !== null ? Math.round(tMaxH) : '',
+                        avgH: tAvgH !== null ? Math.round(tAvgH) : '',
+                        nonForestBasic: sData.nonForestBasic || '0',
+                        nonForestLarge: sData.nonForestLarge || '0'
+                    });
+                });
+
+                // 2-2. 출현종 요약 데이터 구성 (1,2,3,4 확장 포인트 포함)
+                summaryPoints.forEach(pointId => {
                     const pointData = groupedByPoint[pointId] || [];
                     const groupedBySpecies = _.groupBy(pointData, 'species');
                     const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
@@ -238,24 +282,6 @@ function App() {
                         maxHeight: subtotalRow.maxHeight,
                         avgHeight: subtotalRow.avgHeight
                     });
-
-                    // 모니터링 요약 데이터 구성
-                    const sData = standMap[pointId] || {};
-                    monitoringSummary.push({
-                        pointId: pointId,
-                        landUse: generalMap[pointId] || '',
-                        fclass: sData.fclass || '',
-                        regen: sData.regen || '',
-                        ftype: sData.ftype || '',
-                        dclass: sData.dclass || '',
-                        aclas: sData.aclas || '',
-                        totalStems: pointCountTotal,
-                        maxHSpecies: winnerNames, // 최대 수고 수종명들
-                        maxH: pTotalMaxH !== null ? Math.round(pTotalMaxH) : '',
-                        avgH: pTotalAvgH !== null ? Math.round(pTotalAvgH) : '',
-                        nonForestBasic: sData.nonForestBasic || '0',
-                        nonForestLarge: sData.nonForestLarge || '0'
-                    });
                 });
 
                 setData1(speciesSummary);
@@ -274,7 +300,7 @@ function App() {
                 const largeTreesByPoint = _.groupBy(largeTrees, 'pointId');
                 const sortedLargeTrees = [];
 
-                sortedPoints.forEach(pointId => {
+                summaryPoints.forEach(pointId => {
                     const treeList = largeTreesByPoint[pointId] || [];
                     if (treeList.length > 0) {
                         const sortedInPoint = _.orderBy(treeList, 
