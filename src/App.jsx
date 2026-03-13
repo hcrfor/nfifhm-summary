@@ -81,22 +81,34 @@ function App() {
                 let lastPointId = '';
                 const treeProcessed = [];
                 rawTreeJson.forEach(row => {
-                    let pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
-                    if (!pid || pid === 'undefined') {
-                        pid = lastPointId;
+                    const rawPid = getCol(row, ['표본점번호', '표본점']);
+                    const speciesValue = String(getCol(row, ['수종명', '수종']) || '').trim();
+                    
+                    // 실제 데이터가 아닌 헤더 반복 행인지 확인
+                    const isHeaderRow = (rawPid && String(rawPid).includes('표본점')) || 
+                                      (speciesValue && (speciesValue.includes('수종') || speciesValue === 'undefined' || speciesValue === ''));
+
+                    if (isHeaderRow) return;
+
+                    let normalizedPid = normalizeId(rawPid);
+                    let currentPid = '';
+
+                    if (!normalizedPid || normalizedPid === 'undefined') {
+                        currentPid = lastPointId;
                     } else {
-                        lastPointId = pid;
+                        currentPid = normalizedPid;
+                        lastPointId = normalizedPid;
                     }
 
-                    if (pid && pid !== 'undefined') {
+                    if (currentPid && currentPid !== 'undefined' && speciesValue && speciesValue !== 'undefined' && speciesValue !== '') {
                         treeProcessed.push({
-                            pointId: pid,
-                            species: String(getCol(row, ['수종명', '수종'])),
+                            pointId: currentPid,
+                            species: speciesValue,
                             height: getCol(row, ['수고(cm)', '수고']),
                             dbh: getCol(row, ['흉고직경', '직경']),
                             dist: getCol(row, ['거리']),
                             azimuth: getCol(row, ['방위']),
-                            note: String(getCol(row, ['비고(개체목구분코드)', '비고', '코드']))
+                            note: String(getCol(row, ['비고(개체목구분코드)', '비고', '코드'])).replace('undefined', '').trim()
                         });
                     }
                 });
