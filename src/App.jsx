@@ -57,25 +57,33 @@ function App() {
 
                 const normalizeId = (id) => String(id || '').replace(/[-\s]/g, '').trim();
 
-                const readSheetData = (sheetName, headerKeyword) => {
-                    if (!wb.SheetNames.includes(sheetName)) return [];
-                    const ws = wb.Sheets[sheetName];
+                const readSheetData = (sheetKeywords, headerKeywords) => {
+                    const actualSheetName = wb.SheetNames.find(name => {
+                        const cleanName = name.replace(/\s/g, '');
+                        return sheetKeywords.some(k => cleanName.includes(k));
+                    });
+                    if (!actualSheetName) return [];
+                    const ws = wb.Sheets[actualSheetName];
                     const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-                    let headerIdx = 0;
-                    for (let i = 0; i < Math.min(allRows.length, 10); i++) {
-                        const row = allRows[i].map(c => String(c).replace(/\s/g, ''));
-                        if (row.some(c => c.includes(headerKeyword))) {
+                    let headerIdx = -1;
+                    
+                    // 헤더 키워드 중 하나라도 포함된 행 찾기 (최대 15행까지 검색)
+                    for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+                        if (!allRows[i]) continue;
+                        const rowStr = allRows[i].map(c => String(c).replace(/\s/g, '')).join('|');
+                        if (headerKeywords.some(k => rowStr.includes(k))) {
                             headerIdx = i;
                             break;
                         }
                     }
+                    if (headerIdx === -1) return [];
                     return XLSX.utils.sheet_to_json(ws, { range: headerIdx, raw: false, defval: '' });
                 };
 
                 // 1. 임목조사표 읽기
-                const rawTreeJson = readSheetData('임목조사표', '표본점번호');
+                const rawTreeJson = readSheetData(['임목조사', 'Tree'], ['표본점', '조사구', '번호']);
                 if (rawTreeJson.length === 0) {
-                    throw new Error('임목조사표 시트를 확인 하시기 바랍니다.');
+                    throw new Error('임목조사표 시트를 확인 하시기 바랍니다. (시트명: 임목조사표 또는 임목조사)');
                 }
 
                 let lastPointId = '';
@@ -114,33 +122,33 @@ function App() {
                 });
 
                 // 2. 일반정보 읽기 (토지이용정보)
-                const rawGeneralJson = readSheetData('일반정보', '표본점번호');
+                const rawGeneralJson = readSheetData(['일반정보', '기본정보', 'General'], ['표본점', '조사구', '번호']);
                 const generalMap = {};
                 const landUseCodes = {
                     '1': '임목지', '2': '미립목지', '3': '제지', '4': '경작지',
                     '5': '초지', '6': '습지', '7': '주거지', '8': '기타', '95': '죽림'
                 };
                 rawGeneralJson.forEach(row => {
-                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
-                    const code = String(getCol(row, ['토지이용정보', '토지이용'])).trim();
+                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점', '조사구']));
+                    const code = String(getCol(row, ['토지이용정보', '토지이용', '용도'])).trim();
                     if (pid && pid !== 'undefined') {
                         generalMap[pid] = landUseCodes[code] || code;
                     }
                 });
 
                 // 3. 임분조사표 읽기
-                const rawStandJson = readSheetData('임분조사표', '표본점번호');
+                const rawStandJson = readSheetData(['임분조사', 'Stand'], ['표본점', '조사구', '번호']);
                 const standMap = {};
                 const forestClassCodes = { '0': '천연림', '1': '인공림' };
                 const regenCodes = { '0': '기타', '1': '조림', '2': '천연하종', '3': '맹아' };
                 const forestTypeCodes = { '0': '침엽수림', '1': '활엽수림', '2': '혼효림', '3': '비산림' };
 
                 rawStandJson.forEach(row => {
-                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점', '조사구']));
                     if (pid && pid !== 'undefined') {
-                        const fclass = String(getCol(row, ['임종', 'FCLAS'])).trim();
-                        const regen = String(getCol(row, ['갱신형태', 'REGEN'])).trim();
-                        const ftype = String(getCol(row, ['임상', 'FTYPE'])).trim();
+                        const fclass = String(getCol(row, ['임종', 'FCLAS', '종류'])).trim();
+                        const regen = String(getCol(row, ['갱신형태', 'REGEN', '갱신'])).trim();
+                        const ftype = String(getCol(row, ['임상', 'FTYPE', '상태'])).trim();
 
                         standMap[pid] = {
                             fclass: forestClassCodes[fclass] || fclass,
@@ -148,8 +156,8 @@ function App() {
                             ftype: forestTypeCodes[ftype] || ftype,
                             dclass: getCol(row, ['경급', 'DCLAS']),
                             aclas: getCol(row, ['영급', 'ACLAS']),
-                            nonForestBasic: getCol(row, ['비산림면적기본조사원', '비산림면적(기본']),
-                            nonForestLarge: getCol(row, ['비산림면적대경목조사원', '비산림면적(대경목'])
+                            nonForestBasic: getCol(row, ['비산림면적기본조사원', '비산림면적(기본', '비산림']),
+                            nonForestLarge: getCol(row, ['비산림면적대경목조사원', '비산림면적(대경목', '대경목비산림'])
                         };
                     }
                 });
