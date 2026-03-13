@@ -12,12 +12,14 @@ function App() {
     const [error, setError] = useState(null);
     const [fileName, setFileName] = useState('');
     const [activeTab, setActiveTab] = useState('monitoring'); // monitoring | species | largeTrees
+    const [fileType, setFileType] = useState('NFI'); // NFI | FHM
     const fileInputRef = useRef(null);
+    const fhmFileInputRef = useRef(null);
 
-    const handleFileUpload = (e) => {
+    const handleFileUpload = (e, type) => {
         const file = e.target.files[0];
         if (!file) return;
-        processFile(file);
+        processFile(file, type);
     };
 
     const onDragOver = (e) => {
@@ -29,17 +31,18 @@ function App() {
         e.currentTarget.classList.remove('dragging');
     };
 
-    const onDrop = (e) => {
+    const onDrop = (e, type) => {
         e.preventDefault();
         e.currentTarget.classList.remove('dragging');
         const file = e.dataTransfer.files[0];
-        if (file) processFile(file);
+        if (file) processFile(file, type);
     };
 
-    const processFile = (file) => {
+    const processFile = (file, type) => {
         setLoading(true);
         setError(null);
         setFileName(file.name);
+        setFileType(type);
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -48,10 +51,14 @@ function App() {
                 const wb = XLSX.read(ab, { type: 'array' });
 
                 // 공통 헬퍼 함수들
-                const getCol = (row, patterns) => {
-                    const foundKey = Object.keys(row).find(key =>
-                        patterns.some(p => key.replace(/\s/g, '').includes(p))
-                    );
+                const getCol = (row, patterns, strict = false) => {
+                    const foundKey = Object.keys(row).find(key => {
+                        const cleanKey = key.replace(/\s/g, '');
+                        if (strict) {
+                            return patterns.some(p => cleanKey === p.replace(/\s/g, ''));
+                        }
+                        return patterns.some(p => cleanKey.includes(p.replace(/\s/g, '')));
+                    });
                     return foundKey ? row[foundKey] : '';
                 };
 
@@ -60,18 +67,17 @@ function App() {
                 const readSheetData = (sheetKeywords, headerKeywords) => {
                     const actualSheetName = wb.SheetNames.find(name => {
                         const cleanName = name.replace(/\s/g, '');
-                        return sheetKeywords.some(k => cleanName.includes(k));
+                        return sheetKeywords.some(k => cleanName.includes(k.replace(/\s/g, '')));
                     });
                     if (!actualSheetName) return [];
                     const ws = wb.Sheets[actualSheetName];
                     const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
                     let headerIdx = -1;
                     
-                    // 헤더 키워드 중 하나라도 포함된 행 찾기 (최대 15행까지 검색)
                     for (let i = 0; i < Math.min(allRows.length, 15); i++) {
                         if (!allRows[i]) continue;
                         const rowStr = allRows[i].map(c => String(c).replace(/\s/g, '')).join('|');
-                        if (headerKeywords.some(k => rowStr.includes(k))) {
+                        if (headerKeywords.some(k => rowStr.includes(k.replace(/\s/g, '')))) {
                             headerIdx = i;
                             break;
                         }
@@ -80,41 +86,48 @@ function App() {
                     return XLSX.utils.sheet_to_json(ws, { range: headerIdx, raw: false, defval: '' });
                 };
 
+                // 타입별 시트/헤더 키워드 설정
+                const isFHM = type === 'FHM';
+                const treeSheetKeywords = isFHM ? ['임목조사표', '임목조사'] : ['임목조사', 'Tree'];
+                const generalSheetKeywords = isFHM ? ['일반정보'] : ['일반정보', '기본정보', 'General'];
+                const standSheetKeywords = isFHM ? ['임분조사표', '임분조사'] : ['임분조사', 'Stand'];
+
                 // 1. 임목조사표 읽기
-                const rawTreeJson = readSheetData(['임목조사', 'Tree'], ['표본점', '조사구', '번호']);
+                const rawTreeJson = readSheetData(treeSheetKeywords, ['표본점', '수종']);
                 if (rawTreeJson.length === 0) {
-                    throw new Error('임목조사표 시트를 확인 하시기 바랍니다. (시트명: 임목조사표 또는 임목조사)');
+                    throw new Error(`${isFHM ? 'FHM' : 'NFI'} 양식에 맞는 임목조사표 시트를 찾을 수 없습니다.`);
                 }
 
                 let lastPointId = '';
                 const treeProcessed = [];
                 rawTreeJson.forEach(row => {
-                    const rawPid = getCol(row, ['표본점번호', '표본점', '조사구', '번호']);
+                    let rawPid = getCol(row, ['표본점번호', '표본점'], true);
+                    if (!rawPid) rawPid = getCol(row, ['조사구', '번호']);
+
                     const speciesValue = String(getCol(row, ['수종명', '수종', '종명', '나무명']) || '').trim();
                     
-                    // 실제 데이터가 아닌 헤더 반복 행인지 확인 (키워드 매칭 강화)
-                    const headerKeywords = ['표본점', '조사구', '수종명', '수종', '종명', '번호'];
-                    const isHeaderRow = (rawPid && headerKeywords.some(k => String(rawPid).includes(k))) || 
-                                      (speciesValue && (headerKeywords.some(k => speciesValue.includes(k)) || speciesValue === 'undefined' || speciesValue === ''));
+                    const headerKeywordsList = ['표본점', '수종명', '수종', '흉고'];
+                    const isHeaderRow = (rawPid && headerKeywordsList.some(k => String(rawPid).includes(k))) || 
+                                      (speciesValue && (headerKeywordsList.some(k => speciesValue.includes(k)) || speciesValue === 'undefined' || speciesValue === ''));
 
                     if (isHeaderRow) return;
 
                     let normalizedPid = normalizeId(rawPid);
                     let currentPid = '';
 
-                    if (!normalizedPid || normalizedPid === 'undefined') {
+                    if (!normalizedPid || normalizedPid === 'undefined' || normalizedPid.length < 5) {
                         currentPid = lastPointId;
                     } else {
                         currentPid = normalizedPid;
                         lastPointId = normalizedPid;
                     }
 
-                    if (currentPid && currentPid !== 'undefined' && speciesValue && speciesValue !== 'undefined' && speciesValue !== '') {
+                    if (currentPid && speciesValue && speciesValue !== 'undefined' && speciesValue !== '') {
                         treeProcessed.push({
                             pointId: currentPid,
                             species: speciesValue,
-                            height: getCol(row, ['수고(cm)', '수고', '나무수고', '수고(m)', '고(m)']),
-                            dbh: getCol(row, ['흉고직경', '직경', '가슴높이지름', 'DBH']),
+                            height: getCol(row, ['수고(cm)', '수고', '나무수고']),
+                            dbh: getCol(row, ['흉고직경', '직경', 'DBH']),
                             dist: getCol(row, ['거리']),
                             azimuth: getCol(row, ['방위']),
                             note: String(getCol(row, ['비고(개체목구분코드)', '비고', '코드'])).replace('undefined', '').trim()
@@ -123,33 +136,33 @@ function App() {
                 });
 
                 // 2. 일반정보 읽기 (토지이용정보)
-                const rawGeneralJson = readSheetData(['일반정보', '기본정보', 'General'], ['표본점', '조사구', '번호']);
+                const rawGeneralJson = readSheetData(generalSheetKeywords, ['표본점', '토지이용']);
                 const generalMap = {};
                 const landUseCodes = {
                     '1': '임목지', '2': '미립목지', '3': '제지', '4': '경작지',
                     '5': '초지', '6': '습지', '7': '주거지', '8': '기타', '95': '죽림'
                 };
                 rawGeneralJson.forEach(row => {
-                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점', '조사구']));
-                    const code = String(getCol(row, ['토지이용정보', '토지이용', '용도'])).trim();
-                    if (pid && pid !== 'undefined') {
+                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    const code = String(getCol(row, ['토지이용정보', '토지이용'])).trim();
+                    if (pid && pid.length >= 5) {
                         generalMap[pid] = landUseCodes[code] || code;
                     }
                 });
 
                 // 3. 임분조사표 읽기
-                const rawStandJson = readSheetData(['임분조사', 'Stand'], ['표본점', '조사구', '번호']);
+                const rawStandJson = readSheetData(standSheetKeywords, ['표본점', '임종', '임상']);
                 const standMap = {};
                 const forestClassCodes = { '0': '천연림', '1': '인공림' };
                 const regenCodes = { '0': '기타', '1': '조림', '2': '천연하종', '3': '맹아' };
                 const forestTypeCodes = { '0': '침엽수림', '1': '활엽수림', '2': '혼효림', '3': '비산림' };
 
                 rawStandJson.forEach(row => {
-                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점', '조사구']));
-                    if (pid && pid !== 'undefined') {
-                        const fclass = String(getCol(row, ['임종', 'FCLAS', '종류'])).trim();
-                        const regen = String(getCol(row, ['갱신형태', 'REGEN', '갱신'])).trim();
-                        const ftype = String(getCol(row, ['임상', 'FTYPE', '상태'])).trim();
+                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    if (pid && pid.length >= 5) {
+                        const fclass = String(getCol(row, ['임종', 'FCLAS'])).trim();
+                        const regen = String(getCol(row, ['갱신형태', 'REGEN'])).trim();
+                        const ftype = String(getCol(row, ['임상', 'FTYPE'])).trim();
 
                         standMap[pid] = {
                             fclass: forestClassCodes[fclass] || fclass,
@@ -157,35 +170,28 @@ function App() {
                             ftype: forestTypeCodes[ftype] || ftype,
                             dclass: getCol(row, ['경급', 'DCLAS']),
                             aclas: getCol(row, ['영급', 'ACLAS']),
-                            nonForestBasic: getCol(row, ['비산림면적기본조사원', '비산림면적(기본', '비산림']),
-                            nonForestLarge: getCol(row, ['비산림면적대경목조사원', '비산림면적(대경목', '대경목비산림'])
+                            nonForestBasic: getCol(row, ['비산림면적기본', '비산림면적(기본', '비산림']),
+                            nonForestLarge: getCol(row, ['비산림면적대경목', '비산림면적(대경목', '대경목비산림'])
                         };
                     }
                 });
 
-                // --- Logic: 데이터 요약 생성 ---
+                // --- 데이터 요약 생성 ---
                 const speciesSummary = [];
                 const topWinnerSummary = [];
                 const monitoringSummary = [];
-
                 const groupedByPoint = _.groupBy(treeProcessed, 'pointId');
-                
-                // 모든 소스(임목, 일반, 임분)에서 포인트 ID 수집 및 1,2,3,4 확장
                 const allPointIdsFound = new Set();
                 treeProcessed.forEach(t => allPointIdsFound.add(t.pointId));
                 Object.keys(generalMap).forEach(p => allPointIdsFound.add(p));
                 Object.keys(standMap).forEach(p => allPointIdsFound.add(p));
 
-                const originalPoints = Array.from(allPointIdsFound).sort();
-                const expandedPointsSet = new Set(allPointIdsFound);
+                const expandedPointsSet = new Set();
                 allPointIdsFound.forEach(pid => {
                     const sPid = String(pid).trim();
-                    if (!sPid || sPid === 'undefined' || sPid.length === 0) return;
-                    
+                    if (!sPid || sPid.length < 5) return;
                     const lastChar = sPid.slice(-1);
-                    // 1~4로 끝나는 서브플롯 번호인지 판단하여 그에 맞는 베이스(클러스터ID) 추출
                     const base = (['1', '2', '3', '4'].includes(lastChar)) ? sPid.slice(0, -1) : sPid;
-                    
                     if (base) {
                         expandedPointsSet.add(base + '1');
                         expandedPointsSet.add(base + '2');
@@ -195,7 +201,6 @@ function App() {
                 });
                 const summaryPoints = Array.from(expandedPointsSet).sort();
 
-                // 2-1. 모니터링 요약 데이터 구성 (전체 포인트 대상)
                 summaryPoints.forEach(pointId => {
                     const pointData = groupedByPoint[pointId] || [];
                     const groupedBySpecies = _.groupBy(pointData, 'species');
@@ -207,7 +212,6 @@ function App() {
                     let pMaxH = -1;
 
                     sortedSpeciesNames.forEach(speciesName => {
-                        if (!speciesName || speciesName === 'undefined') return;
                         const rows = groupedBySpecies[speciesName];
                         const hs = rows.map(r => parseFloat(r.height)).filter(h => !isNaN(h));
                         pCount += rows.length;
@@ -224,150 +228,57 @@ function App() {
                     const sData = standMap[pointId] || {};
                     
                     monitoringSummary.push({
-                        pointId: pointId,
-                        landUse: generalMap[pointId] || '',
-                        fclass: sData.fclass || '',
-                        regen: sData.regen || '',
-                        ftype: sData.ftype || '',
-                        dclass: sData.dclass || '',
-                        aclas: sData.aclas || '',
-                        totalStems: pCount,
-                        maxHSpecies: pWinnerSpeciesList.join(', '),
-                        maxH: tMaxH !== null ? Math.round(tMaxH) : '',
-                        avgH: tAvgH !== null ? Math.round(tAvgH) : '',
-                        nonForestBasic: sData.nonForestBasic || '0',
-                        nonForestLarge: sData.nonForestLarge || '0'
+                        pointId: pointId, landUse: generalMap[pointId] || '', fclass: sData.fclass || '',
+                        regen: sData.regen || '', ftype: sData.ftype || '', dclass: sData.dclass || '', aclas: sData.aclas || '',
+                        totalStems: pCount, maxHSpecies: pWinnerSpeciesList.join(', '),
+                        maxH: tMaxH !== null ? Math.round(tMaxH) : '', avgH: tAvgH !== null ? Math.round(tAvgH) : '',
+                        nonForestBasic: sData.nonForestBasic || '0', nonForestLarge: sData.nonForestLarge || '0'
                     });
-                });
 
-                // 2-2. 출현종 요약 데이터 구성 (1,2,3,4 확장 포인트 포함)
-                summaryPoints.forEach(pointId => {
-                    const pointData = groupedByPoint[pointId] || [];
-                    const groupedBySpecies = _.groupBy(pointData, 'species');
-                    const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
-
-                    let pointCountTotal = 0;
-                    let pointHeights = [];
                     let pointSpeciesList = [];
-
-                    // 각 표본점별 모든 나무에서 최대 수고 정보 찾기
-                    let pointMaxH = -1;
-                    let winnerSpeciesList = [];
-
                     sortedSpeciesNames.forEach(speciesName => {
-                        if (!speciesName || speciesName === 'undefined') return;
-
                         const speciesRows = groupedBySpecies[speciesName];
-                        const heights = speciesRows
-                            .map(r => parseFloat(r.height))
-                            .filter(h => !isNaN(h));
-
-                        const count = speciesRows.length;
-                        const maxH = heights.length > 0 ? _.max(heights) : null;
-                        const avgH = heights.length > 0 ? _.mean(heights) : null;
-
-                        pointCountTotal += count;
-                        pointHeights.push(...heights);
-
-                        if (maxH !== null) {
-                            if (maxH > pointMaxH) {
-                                pointMaxH = maxH;
-                                winnerSpeciesList = [speciesName];
-                            } else if (maxH === pointMaxH) {
-                                winnerSpeciesList.push(speciesName);
-                            }
-                        }
-
                         pointSpeciesList.push({
-                            type: 'data',
-                            label: speciesName,
-                            pointId: pointId,
-                            count: count,
-                            winnerSpecies: '',
-                            maxHeight: '',
-                            avgHeight: ''
+                            type: 'data', label: speciesName, pointId: pointId, count: speciesRows.length,
+                            winnerSpecies: '', maxHeight: '', avgHeight: ''
                         });
                     });
 
-                    // Sheet 1 처리 (상세/요약)
-                    const pTotalMaxH = pointHeights.length > 0 ? _.max(pointHeights) : null;
-                    const pTotalAvgH = pointHeights.length > 0 ? _.mean(pointHeights) : null;
-
-                    const winnerNames = winnerSpeciesList.join(', ');
-
+                    const pTotalMaxH = pHeights.length > 0 ? _.max(pHeights) : null;
+                    const pTotalAvgH = pHeights.length > 0 ? _.mean(pHeights) : null;
                     const subtotalRow = {
-                        type: 'subtotal',
-                        label: '소계',
-                        pointId: pointId,
-                        count: pointCountTotal,
-                        winnerSpecies: winnerNames,
+                        type: 'subtotal', label: '소계', pointId: pointId, count: pCount,
+                        winnerSpecies: pWinnerSpeciesList.join(', '),
                         maxHeight: pTotalMaxH !== null ? Math.round(pTotalMaxH) : '',
                         avgHeight: pTotalAvgH !== null ? Math.round(pTotalAvgH) : ''
                     };
 
-                    speciesSummary.push({
-                        type: 'header',
-                        label: pointId,
-                        pointId: pointId,
-                        count: '', winnerSpecies: '', maxHeight: '', avgHeight: ''
-                    });
+                    speciesSummary.push({ type: 'header', label: pointId, pointId: pointId, count: '', winnerSpecies: '', maxHeight: '', avgHeight: '' });
                     speciesSummary.push(subtotalRow);
                     speciesSummary.push(...pointSpeciesList);
-
-                    topWinnerSummary.push({
-                        label: pointId,
-                        count: subtotalRow.count,
-                        winnerSpecies: subtotalRow.winnerSpecies,
-                        maxHeight: subtotalRow.maxHeight,
-                        avgHeight: subtotalRow.avgHeight
-                    });
+                    topWinnerSummary.push({ label: pointId, count: subtotalRow.count, winnerSpecies: subtotalRow.winnerSpecies, maxHeight: subtotalRow.maxHeight, avgHeight: subtotalRow.avgHeight });
                 });
 
                 setData1(speciesSummary);
                 setDataSummary(topWinnerSummary);
                 setDataMonitoring(monitoringSummary);
 
-                // --- 대경목 logic (모든 탭 요구사항 반영하여 sortedPoints 기준으로 재구성) ---
                 const largeTrees = treeProcessed.filter(item => {
                     const dbh = parseFloat(item.dbh);
                     const note = String(item.note).toUpperCase();
-                    const isDbhOk = !isNaN(dbh) && dbh >= 30;
-                    const isNoteOk = note === '' || note === 'undefined' || note.includes('L');
-                    return isDbhOk && isNoteOk;
+                    return !isNaN(dbh) && dbh >= 30 && (note === '' || note.includes('L'));
                 });
 
                 const largeTreesByPoint = _.groupBy(largeTrees, 'pointId');
                 const sortedLargeTrees = [];
-
                 summaryPoints.forEach(pointId => {
                     const treeList = largeTreesByPoint[pointId] || [];
                     if (treeList.length > 0) {
-                        const sortedInPoint = _.orderBy(treeList, 
-                            ['species', (item) => parseFloat(item.dbh)], 
-                            ['asc', 'desc']
-                        );
-                        sortedInPoint.forEach(item => {
-                            sortedLargeTrees.push({
-                                pointId: item.pointId,
-                                species: item.species,
-                                dbh: item.dbh,
-                                combined: `${item.species}${item.dbh}`,
-                                dist: item.dist,
-                                azimuth: item.azimuth,
-                                note: (item.note === 'undefined' ? '' : item.note)
-                            });
+                        _.orderBy(treeList, ['species', (item) => parseFloat(item.dbh)], ['asc', 'desc']).forEach(item => {
+                            sortedLargeTrees.push({ pointId: item.pointId, species: item.species, dbh: item.dbh, combined: `${item.species}${item.dbh}`, dist: item.dist, azimuth: item.azimuth, note: item.note });
                         });
                     } else {
-                        // 대경목이 없는 포인트도 빈 줄로 추가 (모든 탭에서 포인트 번호가 보이도록)
-                        sortedLargeTrees.push({
-                            pointId: pointId,
-                            species: '',
-                            dbh: '',
-                            combined: '',
-                            dist: '',
-                            azimuth: '',
-                            note: ''
-                        });
+                        sortedLargeTrees.push({ pointId: pointId, species: '', dbh: '', combined: '', dist: '', azimuth: '', note: '' });
                     }
                 });
 
@@ -448,23 +359,48 @@ function App() {
             )}
 
             {!data1.length ? (
-                <div
-                    className="upload-area"
-                    onDragOver={onDragOver}
-                    onDragLeave={onDragLeave}
-                    onDrop={onDrop}
-                    onClick={() => fileInputRef.current.click()}
-                >
-                    <Upload className="upload-icon mx-auto" strokeWidth={1.5} />
-                    <p className="text-xl font-semibold mb-2">엑셀 파일 업로드</p>
-                    <p className="text-gray-500">파일을 선택하거나 여기로 드래그하세요 (.xlsx, .xlsm)</p>
-                    <input
-                        type="file"
-                        className="hidden"
-                        ref={fileInputRef}
-                        onChange={handleFileUpload}
-                        accept=".xlsx, .xlsm"
-                    />
+                <div className="flex flex-col md:flex-row gap-6 mb-8">
+                    {/* NFI 업로드 구역 */}
+                    <div
+                        className="upload-area flex-1"
+                        onDragOver={onDragOver}
+                        onDragLeave={onDragLeave}
+                        onDrop={(e) => onDrop(e, 'NFI')}
+                        onClick={() => fileInputRef.current.click()}
+                    >
+                        <div className="type-badge nfi">NFI 전용</div>
+                        <Upload className="upload-icon mx-auto" strokeWidth={1.5} />
+                        <p className="text-xl font-semibold mb-2">NFI 파일 업로드</p>
+                        <p className="text-gray-500 text-sm">국가산림자원조사 파일을 선택하세요</p>
+                        <input
+                            type="file"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={(e) => handleFileUpload(e, 'NFI')}
+                            accept=".xlsx, .xlsm"
+                        />
+                    </div>
+
+                    {/* FHM 업로드 구역 */}
+                    <div
+                        className="upload-area flex-1 border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50/30"
+                        onDragOver={onDragOver}
+                        onDragLeave={onDragLeave}
+                        onDrop={(e) => onDrop(e, 'FHM')}
+                        onClick={() => fhmFileInputRef.current.click()}
+                    >
+                        <div className="type-badge fhm">FHM 전용</div>
+                        <Upload className="upload-icon mx-auto text-emerald-500" strokeWidth={1.5} />
+                        <p className="text-xl font-semibold mb-2">FHM 파일 업로드</p>
+                        <p className="text-gray-500 text-sm">산림건강성모니터링 파일을 선택하세요</p>
+                        <input
+                            type="file"
+                            className="hidden"
+                            ref={fhmFileInputRef}
+                            onChange={(e) => handleFileUpload(e, 'FHM')}
+                            accept=".xlsx, .xlsm"
+                        />
+                    </div>
                 </div>
             ) : (
                 <div className="results-section">
@@ -474,7 +410,12 @@ function App() {
                                 <FileSpreadsheet className="text-blue-600" size={24} />
                             </div>
                             <div>
-                                <p className="font-bold text-lg">{fileName}</p>
+                                <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${fileType === 'FHM' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        {fileType}
+                                    </span>
+                                    <p className="font-bold text-lg">{fileName}</p>
+                                </div>
                                 <div className="flex items-center gap-1 text-green-600 text-sm">
                                     <CheckCircle2 size={14} />
                                     <span>분석 완료</span>

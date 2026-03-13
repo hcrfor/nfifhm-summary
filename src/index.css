@@ -107,6 +107,49 @@ header p {
   margin-bottom: 1rem;
 }
 
+.type-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.type-badge.nfi {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.type-badge.fhm {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.gap-6 {
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .md\:flex-row {
+    flex-direction: row;
+  }
+}
+
 .tabs {
   display: flex;
   gap: 1rem;
