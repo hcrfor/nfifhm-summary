@@ -301,7 +301,8 @@ function App() {
                 summaryPoints.forEach(pointId => {
                     const treeList = largeTreesByPoint[pointId] || [];
                     if (treeList.length > 0) {
-                        _.orderBy(treeList, ['species', (item) => parseFloat(item.dbh)], ['asc', 'desc']).forEach(item => {
+                        // 흉고직경(DBH)을 숫자형으로 변환하여 내림차순으로 정렬 (표본점번호는 이미 외부 루프에서 정렬됨)
+                        _.orderBy(treeList, [(item) => parseFloat(item.dbh)], ['desc']).forEach(item => {
                             sortedLargeTrees.push({ pointId: item.pointId, species: item.species, dbh: item.dbh, combined: `${item.species}${item.dbh}`, dist: item.dist, azimuth: item.azimuth, note: item.note });
                         });
                     } else {
