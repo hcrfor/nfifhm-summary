@@ -145,12 +145,16 @@ function App() {
                 allPointIdsFound.forEach(pid => {
                     const sPid = String(pid).trim();
                     if (sPid && sPid !== 'undefined' && sPid.length > 0) {
-                        const base = sPid.slice(0, -1);
-                        if (base) {
-                            expandedPointsSet.add(base + '1');
-                            expandedPointsSet.add(base + '2');
-                            expandedPointsSet.add(base + '3');
-                            expandedPointsSet.add(base + '4');
+                        const lastChar = sPid.slice(-1);
+                        // 서브플롯(1~4) 형태인 경우에만 1,2,3,4를 자동으로 생성 (다른 번호 체계 훼손 방지)
+                        if (['1', '2', '3', '4'].includes(lastChar)) {
+                            const base = sPid.slice(0, -1);
+                            if (base) {
+                                expandedPointsSet.add(base + '1');
+                                expandedPointsSet.add(base + '2');
+                                expandedPointsSet.add(base + '3');
+                                expandedPointsSet.add(base + '4');
+                            }
                         }
                     }
                 });
