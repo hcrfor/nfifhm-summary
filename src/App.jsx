@@ -89,12 +89,13 @@ function App() {
                 let lastPointId = '';
                 const treeProcessed = [];
                 rawTreeJson.forEach(row => {
-                    const rawPid = getCol(row, ['표본점번호', '표본점']);
-                    const speciesValue = String(getCol(row, ['수종명', '수종']) || '').trim();
+                    const rawPid = getCol(row, ['표본점번호', '표본점', '조사구', '번호']);
+                    const speciesValue = String(getCol(row, ['수종명', '수종', '종명', '나무명']) || '').trim();
                     
-                    // 실제 데이터가 아닌 헤더 반복 행인지 확인
-                    const isHeaderRow = (rawPid && String(rawPid).includes('표본점')) || 
-                                      (speciesValue && (speciesValue.includes('수종') || speciesValue === 'undefined' || speciesValue === ''));
+                    // 실제 데이터가 아닌 헤더 반복 행인지 확인 (키워드 매칭 강화)
+                    const headerKeywords = ['표본점', '조사구', '수종명', '수종', '종명', '번호'];
+                    const isHeaderRow = (rawPid && headerKeywords.some(k => String(rawPid).includes(k))) || 
+                                      (speciesValue && (headerKeywords.some(k => speciesValue.includes(k)) || speciesValue === 'undefined' || speciesValue === ''));
 
                     if (isHeaderRow) return;
 
@@ -112,8 +113,8 @@ function App() {
                         treeProcessed.push({
                             pointId: currentPid,
                             species: speciesValue,
-                            height: getCol(row, ['수고(cm)', '수고']),
-                            dbh: getCol(row, ['흉고직경', '직경']),
+                            height: getCol(row, ['수고(cm)', '수고', '나무수고', '수고(m)', '고(m)']),
+                            dbh: getCol(row, ['흉고직경', '직경', '가슴높이지름', 'DBH']),
                             dist: getCol(row, ['거리']),
                             azimuth: getCol(row, ['방위']),
                             note: String(getCol(row, ['비고(개체목구분코드)', '비고', '코드'])).replace('undefined', '').trim()
