@@ -55,6 +55,8 @@ function App() {
                     return foundKey ? row[foundKey] : '';
                 };
 
+                const normalizeId = (id) => String(id || '').replace(/[-\s]/g, '').trim();
+
                 const readSheetData = (sheetName, headerKeyword) => {
                     if (!wb.SheetNames.includes(sheetName)) return [];
                     const ws = wb.Sheets[sheetName];
@@ -76,15 +78,28 @@ function App() {
                     throw new Error('임목조사표 시트를 확인 하시기 바랍니다.');
                 }
 
-                const treeProcessed = rawTreeJson.map(row => ({
-                    pointId: String(getCol(row, ['표본점번호', '표본점'])),
-                    species: String(getCol(row, ['수종명', '수종'])),
-                    height: getCol(row, ['수고(cm)', '수고']),
-                    dbh: getCol(row, ['흉고직경', '직경']),
-                    dist: getCol(row, ['거리']),
-                    azimuth: getCol(row, ['방위']),
-                    note: String(getCol(row, ['비고(개체목구분코드)', '비고', '코드']))
-                })).filter(item => item.pointId && item.pointId !== 'undefined' && item.pointId !== '');
+                let lastPointId = '';
+                const treeProcessed = [];
+                rawTreeJson.forEach(row => {
+                    let pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    if (!pid || pid === 'undefined') {
+                        pid = lastPointId;
+                    } else {
+                        lastPointId = pid;
+                    }
+
+                    if (pid && pid !== 'undefined') {
+                        treeProcessed.push({
+                            pointId: pid,
+                            species: String(getCol(row, ['수종명', '수종'])),
+                            height: getCol(row, ['수고(cm)', '수고']),
+                            dbh: getCol(row, ['흉고직경', '직경']),
+                            dist: getCol(row, ['거리']),
+                            azimuth: getCol(row, ['방위']),
+                            note: String(getCol(row, ['비고(개체목구분코드)', '비고', '코드']))
+                        });
+                    }
+                });
 
                 // 2. 일반정보 읽기 (토지이용정보)
                 const rawGeneralJson = readSheetData('일반정보', '표본점번호');
@@ -94,9 +109,9 @@ function App() {
                     '5': '초지', '6': '습지', '7': '주거지', '8': '기타', '95': '죽림'
                 };
                 rawGeneralJson.forEach(row => {
-                    const pid = String(getCol(row, ['표본점번호', '표본점']));
+                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
                     const code = String(getCol(row, ['토지이용정보', '토지이용'])).trim();
-                    if (pid) {
+                    if (pid && pid !== 'undefined') {
                         generalMap[pid] = landUseCodes[code] || code;
                     }
                 });
@@ -109,8 +124,8 @@ function App() {
                 const forestTypeCodes = { '0': '침엽수림', '1': '활엽수림', '2': '혼효림', '3': '비산림' };
 
                 rawStandJson.forEach(row => {
-                    const pid = String(getCol(row, ['표본점번호', '표본점']));
-                    if (pid) {
+                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    if (pid && pid !== 'undefined') {
                         const fclass = String(getCol(row, ['임종', 'FCLAS'])).trim();
                         const regen = String(getCol(row, ['갱신형태', 'REGEN'])).trim();
                         const ftype = String(getCol(row, ['임상', 'FTYPE'])).trim();
