@@ -50,34 +50,44 @@ function App() {
                 const ab = e.target.result;
                 const wb = XLSX.read(ab, { type: 'array' });
 
-                // 공통 헬퍼 함수들
+                // 공통 헬퍼 함수들 (강화된 버전)
+                const clean = (str) => String(str || '').replace(/[^a-zA-Z0-9가-힣]/g, '');
+
                 const getCol = (row, patterns, strict = false) => {
-                    const foundKey = Object.keys(row).find(key => {
-                        const cleanKey = key.replace(/\s/g, '');
-                        if (strict) {
-                            return patterns.some(p => cleanKey === p.replace(/\s/g, ''));
-                        }
-                        return patterns.some(p => cleanKey.includes(p.replace(/\s/g, '')));
-                    });
-                    return foundKey ? row[foundKey] : '';
+                    const keys = Object.keys(row);
+                    // 1. 우선 순위 패턴 매칭 (정확도 향상)
+                    for (const pattern of patterns) {
+                        const cleanP = clean(pattern);
+                        const foundKey = keys.find(key => {
+                            const cleanK = clean(key);
+                            if (strict) return cleanK === cleanP;
+                            return cleanK.includes(cleanP);
+                        });
+                        if (foundKey) return row[foundKey];
+                    }
+                    return '';
                 };
 
-                const normalizeId = (id) => String(id || '').replace(/[-\s]/g, '').trim();
+                const normalizeId = (id) => String(id || '').replace(/[^0-9]/g, '').trim();
 
                 const readSheetData = (sheetKeywords, headerKeywords) => {
                     const actualSheetName = wb.SheetNames.find(name => {
-                        const cleanName = name.replace(/\s/g, '');
-                        return sheetKeywords.some(k => cleanName.includes(k.replace(/\s/g, '')));
+                        const cleanName = clean(name);
+                        return sheetKeywords.some(k => cleanName.includes(clean(k)));
                     });
                     if (!actualSheetName) return [];
+
                     const ws = wb.Sheets[actualSheetName];
                     const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
                     let headerIdx = -1;
                     
-                    for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+                    // 헤더 감지 로직 강화
+                    for (let i = 0; i < Math.min(allRows.length, 20); i++) {
                         if (!allRows[i]) continue;
-                        const rowStr = allRows[i].map(c => String(c).replace(/\s/g, '')).join('|');
-                        if (headerKeywords.some(k => rowStr.includes(k.replace(/\s/g, '')))) {
+                        const rowStr = allRows[i].map(c => clean(c)).join('|');
+                        // 헤더 키워드 중 2개 이상이 발견되면 헤더 행으로 간주 (정확도 확보)
+                        const matchCount = headerKeywords.filter(k => rowStr.includes(clean(k))).length;
+                        if (matchCount >= 1) {
                             headerIdx = i;
                             break;
                         }
@@ -86,11 +96,11 @@ function App() {
                     return XLSX.utils.sheet_to_json(ws, { range: headerIdx, raw: false, defval: '' });
                 };
 
-                // 타입별 시트/헤더 키워드 설정
+                // 타입별 시트/헤더 키워드 설정 (보강)
                 const isFHM = type === 'FHM';
-                const treeSheetKeywords = isFHM ? ['임목조사표', '임목조사'] : ['임목조사', 'Tree'];
-                const generalSheetKeywords = isFHM ? ['일반정보'] : ['일반정보', '기본정보', 'General'];
-                const standSheetKeywords = isFHM ? ['임분조사표', '임분조사'] : ['임분조사', 'Stand'];
+                const treeSheetKeywords = ['임목조사표', '임목조사', 'Tree'];
+                const generalSheetKeywords = ['일반정보', '기본정보', 'General'];
+                const standSheetKeywords = ['임분조사표', '임분조사', 'Stand'];
 
                 // 1. 임목조사표 읽기
                 const rawTreeJson = readSheetData(treeSheetKeywords, ['표본점', '수종']);
@@ -105,7 +115,6 @@ function App() {
                     if (!rawPid) rawPid = getCol(row, ['조사구', '번호']);
 
                     const speciesValue = String(getCol(row, ['수종명', '수종', '종명', '나무명']) || '').trim();
-                    
                     const headerKeywordsList = ['표본점', '수종명', '수종', '흉고'];
                     const isHeaderRow = (rawPid && headerKeywordsList.some(k => String(rawPid).includes(k))) || 
                                       (speciesValue && (headerKeywordsList.some(k => speciesValue.includes(k)) || speciesValue === 'undefined' || speciesValue === ''));
@@ -126,11 +135,11 @@ function App() {
                         treeProcessed.push({
                             pointId: currentPid,
                             species: speciesValue,
-                            height: getCol(row, ['수고(cm)', '수고', '나무수고']),
+                            height: getCol(row, ['수고', '나무수고']),
                             dbh: getCol(row, ['흉고직경', '직경', 'DBH']),
                             dist: getCol(row, ['거리']),
                             azimuth: getCol(row, ['방위']),
-                            note: String(getCol(row, ['비고(개체목구분코드)', '비고', '코드'])).replace('undefined', '').trim()
+                            note: String(getCol(row, ['비고', '코드'])).replace('undefined', '').trim()
                         });
                     }
                 });
@@ -170,8 +179,8 @@ function App() {
                             ftype: forestTypeCodes[ftype] || ftype,
                             dclass: getCol(row, ['경급', 'DCLAS']),
                             aclas: getCol(row, ['영급', 'ACLAS']),
-                            nonForestBasic: getCol(row, ['비산림면적기본', '비산림면적(기본', '비산림']),
-                            nonForestLarge: getCol(row, ['비산림면적대경목', '비산림면적(대경목', '대경목비산림'])
+                            nonForestBasic: getCol(row, ['비산림면적기본', '비산림']),
+                            nonForestLarge: getCol(row, ['비산림면적대경목', '대경목비산림'])
                         };
                     }
                 });
