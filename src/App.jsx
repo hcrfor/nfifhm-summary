@@ -89,6 +89,22 @@ function App() {
 
                 const normalizeId = (id) => String(id || '').replace(/[^0-9]/g, '').trim();
 
+                const getClusterValue = (map, pid) => {
+                    if (map[pid]) return map[pid];
+                    const sPid = String(pid);
+                    const lastChar = sPid.slice(-1);
+                    const base = (['1', '2', '3', '4'].includes(lastChar)) ? sPid.slice(0, -1) : sPid;
+                    return map[base] || map[base + '1'] || map[base + '2'] || map[base + '3'] || map[base + '4'] || '';
+                };
+
+                const getClusterData = (map, pid) => {
+                    if (map[pid]) return map[pid];
+                    const sPid = String(pid);
+                    const lastChar = sPid.slice(-1);
+                    const base = (['1', '2', '3', '4'].includes(lastChar)) ? sPid.slice(0, -1) : sPid;
+                    return map[base] || map[base + '1'] || map[base + '2'] || map[base + '3'] || map[base + '4'] || {};
+                };
+
                 const readSheetData = (sheetKeywords, headerKeywords) => {
                     const actualSheetName = wb.SheetNames.find(name => {
                         const cleanName = clean(name);
@@ -169,10 +185,16 @@ function App() {
                     '1': '임목지', '2': '미립목지', '3': '제지', '4': '경작지',
                     '5': '초지', '6': '습지', '7': '주거지', '8': '기타', '95': '죽림'
                 };
+                let lastGenPid = '';
                 rawGeneralJson.forEach(row => {
-                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
-                    const code = String(getCol(row, ['토지이용정보', '토지이용'])).trim();
-                    if (pid && pid.length >= 5) {
+                    let pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    if (!pid || pid === 'undefined') pid = lastGenPid;
+                    else lastGenPid = pid;
+
+                    const codeVal = getCol(row, ['토지이용정보', '토지이용']);
+                    const code = codeVal !== undefined && codeVal !== null ? String(codeVal).trim() : '';
+                    
+                    if (pid && pid.length >= 5 && code && code !== 'undefined') {
                         generalMap[pid] = landUseCodes[code] || code;
                     }
                 });
@@ -184,8 +206,12 @@ function App() {
                 const regenCodes = { '0': '기타', '1': '조림', '2': '천연하종', '3': '맹아' };
                 const forestTypeCodes = { '0': '침엽수림', '1': '활엽수림', '2': '혼효림', '3': '비산림' };
 
+                let lastStandPid = '';
                 rawStandJson.forEach(row => {
-                    const pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    let pid = normalizeId(getCol(row, ['표본점번호', '표본점']));
+                    if (!pid || pid === 'undefined') pid = lastStandPid;
+                    else lastStandPid = pid;
+
                     if (pid && pid.length >= 5) {
                         const fclass = String(getCol(row, ['임종', 'FCLAS'])).trim();
                         const regen = String(getCol(row, ['갱신형태', 'REGEN'])).trim();
@@ -252,10 +278,12 @@ function App() {
 
                     const tMaxH = pHeights.length > 0 ? _.max(pHeights) : null;
                     const tAvgH = pHeights.length > 0 ? _.mean(pHeights) : null;
-                    const sData = standMap[pointId] || {};
+                    const sData = getClusterData(standMap, pointId);
                     
                     monitoringSummary.push({
-                        pointId: pointId, landUse: generalMap[pointId] || '', fclass: sData.fclass || '',
+                        pointId: pointId, 
+                        landUse: getClusterValue(generalMap, pointId), 
+                        fclass: sData.fclass || '',
                         regen: sData.regen || '', ftype: sData.ftype || '', dclass: sData.dclass || '', aclas: sData.aclas || '',
                         totalStems: pCount, maxHSpecies: pWinnerSpeciesList.join(', '),
                         maxH: tMaxH !== null ? Math.round(tMaxH) : '', avgH: tAvgH !== null ? Math.round(tAvgH) : '',
