@@ -343,8 +343,15 @@ function App() {
 
                     if (treeList.length > 0) {
                         // 1순위: 표본점번호 오름차순 (외부 루프에서 이미 정렬됨)
-                        // 2순위: 흉고직경 내림차순, 3순위: 수종명 오름차순
-                        _.orderBy(treeList, [(item) => parseFloat(item.dbh), 'species'], ['desc', 'asc']).forEach(item => {
+                        // 2순위: 흉고직경 내림차순, 3순위: 수종명 오름차순 (한글 정렬 완벽 반영)
+                        treeList.sort((a, b) => {
+                            const dbhA = parseFloat(a.dbh) || 0;
+                            const dbhB = parseFloat(b.dbh) || 0;
+                            if (dbhA !== dbhB) return dbhB - dbhA; // 흉고직경 내림차순
+                            const speciesA = a.species || '';
+                            const speciesB = b.species || '';
+                            return speciesA.localeCompare(speciesB); // 수종명 오름차순
+                        }).forEach(item => {
                             sortedLargeTrees.push({ pointId: item.pointId, species: item.species, dbh: item.dbh, combined: `${item.species}${item.dbh}`, dist: item.dist, azimuth: item.azimuth, note: item.note });
                         });
                     } else {
