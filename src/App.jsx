@@ -334,6 +334,14 @@ function App() {
                 const sortedLargeTrees = [];
                 summaryPoints.forEach(pointId => {
                     const treeList = largeTreesByPoint[pointId] || [];
+                    
+                    // 기준 데이터(상세 혹은 임분 정보)가 전혀 없는 표본점은 대경목 목록에서도 제외
+                    const pointData = groupedByPoint[pointId] || [];
+                    const sData = getClusterData(standMap, pointId);
+                    if (pointData.length === 0 && !sData.fclass && !sData.ftype) {
+                        return;
+                    }
+
                     if (treeList.length > 0) {
                         // 흉고직경(DBH)을 숫자형으로 변환하여 내림차순으로 정렬 (표본점번호는 이미 외부 루프에서 정렬됨)
                         _.orderBy(treeList, [(item) => parseFloat(item.dbh)], ['desc']).forEach(item => {
