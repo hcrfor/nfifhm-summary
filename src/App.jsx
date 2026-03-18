@@ -256,6 +256,13 @@ function App() {
 
                 summaryPoints.forEach(pointId => {
                     const pointData = groupedByPoint[pointId] || [];
+                    const sData = getClusterData(standMap, pointId);
+
+                    // 트리 데이터(pCount)가 0이고 임분 정보(fclass, ftype)가 없는 경우 불필요한 데이터로 간주하여 제외
+                    if (pointData.length === 0 && !sData.fclass && !sData.ftype) {
+                        return;
+                    }
+
                     const groupedBySpecies = _.groupBy(pointData, 'species');
                     const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
 
@@ -278,7 +285,6 @@ function App() {
 
                     const tMaxH = pHeights.length > 0 ? _.max(pHeights) : null;
                     const tAvgH = pHeights.length > 0 ? _.mean(pHeights) : null;
-                    const sData = getClusterData(standMap, pointId);
                     
                     monitoringSummary.push({
                         pointId: pointId, 
