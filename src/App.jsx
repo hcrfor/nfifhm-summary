@@ -366,6 +366,27 @@ function App() {
     const downloadExcel = () => {
         const wb = XLSX.utils.book_new();
 
+        // 열 넓이 자동 조절 헬퍼 함수
+        const adjustWidths = (data) => {
+            if (!data || data.length === 0) return [];
+            const colCounts = data[0].length;
+            const widths = Array(colCounts).fill(0);
+
+            data.forEach(row => {
+                row.forEach((val, i) => {
+                    const str = String(val || '');
+                    let len = 0;
+                    for (let j = 0; j < str.length; j++) {
+                        if (str.charCodeAt(j) > 127) len += 2;
+                        else len += 1;
+                    }
+                    if (len > widths[i]) widths[i] = len;
+                });
+            });
+
+            return widths.map(w => ({ wch: w + 2 })); // 여백 2 추가
+        };
+
         // 1. 모니터링 요약
         const wsMonData = [
             ['표본점번호', '토지이용', '임종', '갱신형태', '임상', '경급', '영급', '총본수', '최대 수고 수종명', '최대 수고', '평균 수고', '비산림면적(기본조사원)', '비산림면적(대경목조사원)']
@@ -377,6 +398,7 @@ function App() {
             ]);
         });
         const wsMon = XLSX.utils.aoa_to_sheet(wsMonData);
+        wsMon['!cols'] = adjustWidths(wsMonData);
         XLSX.utils.book_append_sheet(wb, wsMon, '모니터링 요약');
 
         // 2. 출현종 요약
@@ -394,6 +416,7 @@ function App() {
             ws1Data.push([row.label, row.count, row.winnerSpecies, row.maxHeight, row.avgHeight]);
         });
         const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
+        ws1['!cols'] = adjustWidths(ws1Data);
         XLSX.utils.book_append_sheet(wb, ws1, '출현종 요약');
 
         // 3. 대경목 출현 요약
@@ -404,6 +427,7 @@ function App() {
             ws2Data.push([row.pointId, row.species, row.dbh, row.combined, row.dist, row.azimuth, row.note]);
         });
         const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
+        ws2['!cols'] = adjustWidths(ws2Data);
         XLSX.utils.book_append_sheet(wb, ws2, '대경목 출현 요약');
 
         // 파일명 생성 로직: 첫 번째 표본점 번호의 마지막 자리를 제외하고 '_모니터링 요약'을 붙임
