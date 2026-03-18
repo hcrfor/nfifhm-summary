@@ -342,8 +342,9 @@ function App() {
                     }
 
                     if (treeList.length > 0) {
-                        // 흉고직경(DBH)을 숫자형으로 변환하여 내림차순으로 정렬 (표본점번호는 이미 외부 루프에서 정렬됨)
-                        _.orderBy(treeList, [(item) => parseFloat(item.dbh)], ['desc']).forEach(item => {
+                        // 1순위: 표본점번호 오름차순 (외부 루프에서 이미 정렬됨)
+                        // 2순위: 흉고직경 내림차순, 3순위: 수종명 오름차순
+                        _.orderBy(treeList, [(item) => parseFloat(item.dbh), 'species'], ['desc', 'asc']).forEach(item => {
                             sortedLargeTrees.push({ pointId: item.pointId, species: item.species, dbh: item.dbh, combined: `${item.species}${item.dbh}`, dist: item.dist, azimuth: item.azimuth, note: item.note });
                         });
                     } else {
