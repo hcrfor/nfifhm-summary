@@ -326,8 +326,7 @@ function App() {
 
                 const largeTrees = treeProcessed.filter(item => {
                     const dbh = parseFloat(item.dbh);
-                    const note = String(item.note).toUpperCase();
-                    return !isNaN(dbh) && dbh >= 30 && (note === '' || note.includes('L'));
+                    return !isNaN(dbh) && dbh >= 30;
                 });
 
                 const largeTreesByPoint = _.groupBy(largeTrees, 'pointId');
