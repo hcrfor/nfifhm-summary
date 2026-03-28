@@ -358,13 +358,6 @@ function App() {
                     }
                 });
 
-                // --- 데이터 요약 생성 (현재 업로드 파일) ---
-                const res = generateSummaries(treeProcessed, generalMap, standMap);
-                setData1(res.speciesSummary);
-                setDataSummary(res.topWinnerSummary);
-                setDataMonitoring(res.monitoringSummary);
-                setData2(res.sortedLargeTrees);
-
                 // --- 2021자료.xlsx 연동 (집락번호 매칭) ---
                 const clusterIdFromFileName = file.name.match(/\d{12}/)?.[0] || '';
                 const baseClusterId = clusterIdFromFileName || (treeProcessed.length > 0 ? treeProcessed[0].pointId.slice(0, -1) : '');
@@ -374,12 +367,57 @@ function App() {
                         .then(res => res.arrayBuffer())
                         .then(ab => {
                             const wb2021 = XLSX.read(ab, { type: 'array' });
-                            const ws = wb2021.Sheets[wb2021.SheetNames[0]];
+                            
+                            // 2021자료에서는 '임목조사표(2021)' 또는 첫 번째 유효한 시트를 찾음
+                            const targetSheetName = wb2021.SheetNames.find(n => n.includes('임목조사표(2021)')) || 
+                                                  wb2021.SheetNames.find(n => n.includes('2021')) || 
+                                                  wb2021.SheetNames[0];
+                            
+                            const ws = wb2021.Sheets[targetSheetName];
                             const data2021 = XLSX.utils.sheet_to_json(ws);
                             
-                            const filtered = data2021.filter(row => String(row['집락번호'] || '') === String(baseClusterId));
-                            const treeProcessed2021 = filtered.map(item => ({
-                                pointId: String(item['표본점번호'] || '').trim(),
+                            const filtered2021Rows = data2021.filter(row => String(row['집락번호'] || '') === String(baseClusterId));
+                            
+                            // 매핑 테이블 생성 (신규 표본점번호 -> 구 표본점번호)
+                            const idMap = {};
+                            filtered2021Rows.forEach(row => {
+                                const newPid = String(row['표본점번호'] || '').trim();
+                                const oldPid = String(row['구표본점번호'] || '').trim();
+                                if (newPid && oldPid) idMap[newPid] = oldPid;
+                            });
+
+                            // --- 1. 현재(2026) 데이터의 ID를 구 번호로 변환 ---
+                            if (Object.keys(idMap).length > 0) {
+                                treeProcessed.forEach(t => { if (idMap[t.pointId]) t.pointId = idMap[t.pointId]; });
+                                
+                                const mappedGeneralMap = {};
+                                Object.keys(generalMap).forEach(k => {
+                                    const newKey = idMap[k] || k;
+                                    mappedGeneralMap[newKey] = generalMap[k];
+                                });
+                                
+                                const mappedStandMap = {};
+                                Object.keys(standMap).forEach(k => {
+                                    const newKey = idMap[k] || k;
+                                    mappedStandMap[newKey] = standMap[k];
+                                });
+
+                                const res = generateSummaries(treeProcessed, mappedGeneralMap, mappedStandMap);
+                                setData1(res.speciesSummary);
+                                setDataSummary(res.topWinnerSummary);
+                                setDataMonitoring(res.monitoringSummary);
+                                setData2(res.sortedLargeTrees);
+                            } else {
+                                const res = generateSummaries(treeProcessed, generalMap, standMap);
+                                setData1(res.speciesSummary);
+                                setDataSummary(res.topWinnerSummary);
+                                setDataMonitoring(res.monitoringSummary);
+                                setData2(res.sortedLargeTrees);
+                            }
+
+                            // --- 2. 2021 과거 데이터 요약 (구 번호 적용) ---
+                            const treeProcessed2021 = filtered2021Rows.map(item => ({
+                                pointId: String(item['구표본점번호'] || item['표본점번호'] || '').trim(),
                                 species: String(item['수종명'] || '').trim(),
                                 height: item['수고'],
                                 dbh: item['흉고직경'],
@@ -388,7 +426,12 @@ function App() {
                                 note: String(item['비고(개체목구분코드)'] || '').replace('undefined', '').trim()
                             }));
 
-                            const res2021 = generateSummaries(treeProcessed2021, {}, {}, [baseClusterId + '1', baseClusterId + '2', baseClusterId + '3', baseClusterId + '4']);
+                            // 2021 데이터의 구 집락번호를 찾아 범위 설정
+                            const oldBaseId = filtered2021Rows.length > 0 ? String(filtered2021Rows[0]['구집락번호'] || '').trim() : '';
+                            const customPoints2021 = oldBaseId ? [oldBaseId + '1', oldBaseId + '2', oldBaseId + '3', oldBaseId + '4'] : 
+                                                    [baseClusterId + '1', baseClusterId + '2', baseClusterId + '3', baseClusterId + '4'];
+
+                            const res2021 = generateSummaries(treeProcessed2021, {}, {}, customPoints2021);
                             setData2021_1(res2021.speciesSummary);
                             setData2021_Summary(res2021.topWinnerSummary);
                             setData2021_2(res2021.sortedLargeTrees);
@@ -396,9 +439,19 @@ function App() {
                         })
                         .catch(err => {
                             console.error('2021 data error:', err);
+                            const res = generateSummaries(treeProcessed, generalMap, standMap);
+                            setData1(res.speciesSummary);
+                            setDataSummary(res.topWinnerSummary);
+                            setDataMonitoring(res.monitoringSummary);
+                            setData2(res.sortedLargeTrees);
                             setLoading(false);
                         });
                 } else {
+                    const res = generateSummaries(treeProcessed, generalMap, standMap);
+                    setData1(res.speciesSummary);
+                    setDataSummary(res.topWinnerSummary);
+                    setDataMonitoring(res.monitoringSummary);
+                    setData2(res.sortedLargeTrees);
                     setLoading(false);
                 }
             } catch (err) {
@@ -509,10 +562,9 @@ function App() {
         ws2['!cols'] = adjustWidths(ws2Data);
         XLSX.utils.book_append_sheet(wb, ws2, '2026 대경목 출현 요약');
 
-        // 파일명 생성 로직: 첫 번째 표본점 번호의 마지막 자리를 제외하고 '_모니터링 요약'을 붙임
-        const firstPointId = dataMonitoring.length > 0 ? String(dataMonitoring[0].pointId).trim() : '';
-        const fileNamePrefix = firstPointId ? firstPointId.slice(0, -1) : '임목조사';
-        const finalFileName = `${fileNamePrefix}_모니터링 요약.xlsx`;
+        // 파일명 생성 로직: 업로드된 원본 파일명 활용
+        const originalBaseName = fileName.replace(/\.[^/.]+$/, ""); // 확장자 제거
+        const finalFileName = `${originalBaseName}_모니터링 요약.xlsx`;
 
         XLSX.writeFile(wb, finalFileName);
     };
