@@ -572,7 +572,7 @@ function App() {
     return (
         <div className="dashboard">
             <header>
-                <h1>임목조사 데이터 요약 도구</h1>
+                <h1>국가산림자원조사 결과보고서 자료 생성</h1>
                 <p>숲의 데이터를 정확하고 빠르게 분석합니다</p>
             </header>
 
