@@ -109,130 +109,117 @@ function App() {
                 };
 
                 const generateSummaries = (trees, gMap = {}, sMap = {}, customPoints = null) => {
-                    const speciesSummary = [];
-                    const topWinnerSummary = [];
-                    const monitoringSummary = [];
-                    const groupedByPoint = _.groupBy(trees, 'pointId');
-                    
-                    let summaryPoints = [];
-                    if (customPoints) {
-                        summaryPoints = customPoints;
-                    } else {
-                        const allPointIdsFound = new Set();
-                        trees.forEach(t => allPointIdsFound.add(t.pointId));
-                        Object.keys(gMap).forEach(p => allPointIdsFound.add(p));
-                        Object.keys(sMap).forEach(p => allPointIdsFound.add(p));
+    const speciesSummary = [];
+    const monitoringSummary = [];
+    const groupedByPoint = _.groupBy(trees, 'pointId');
+    
+    let summaryPoints = [];
+    if (customPoints) {
+        summaryPoints = customPoints;
+    } else {
+        const allPointIdsFound = new Set();
+        trees.forEach(t => allPointIdsFound.add(t.pointId));
+        Object.keys(gMap).forEach(p => allPointIdsFound.add(p));
+        Object.keys(sMap).forEach(p => allPointIdsFound.add(p));
 
-                        const expandedPointsSet = new Set();
-                        allPointIdsFound.forEach(pid => {
-                            const sPid = String(pid).trim();
-                            if (!sPid || sPid.length < 5) return;
-                            const lastChar = sPid.slice(-1);
-                            const base = (['1', '2', '3', '4'].includes(lastChar)) ? sPid.slice(0, -1) : sPid;
-                            if (base) {
-                                expandedPointsSet.add(base + '1');
-                                expandedPointsSet.add(base + '2');
-                                expandedPointsSet.add(base + '3');
-                                expandedPointsSet.add(base + '4');
-                            }
-                        });
-                        summaryPoints = Array.from(expandedPointsSet).sort();
-                    }
+        const expandedPointsSet = new Set();
+        allPointIdsFound.forEach(pid => {
+            const sPid = String(pid).trim();
+            if (!sPid || sPid.length < 5) return;
+            const lastChar = sPid.slice(-1);
+            const base = (['1', '2', '3', '4'].includes(lastChar)) ? sPid.slice(0, -1) : sPid;
+            if (base) {
+                expandedPointsSet.add(base + '1');
+                expandedPointsSet.add(base + '2');
+                expandedPointsSet.add(base + '3');
+                expandedPointsSet.add(base + '4');
+            }
+        });
+        summaryPoints = Array.from(expandedPointsSet).sort();
+    }
 
-                    summaryPoints.forEach(pointId => {
-                        const pointData = groupedByPoint[pointId] || [];
-                        const sData = getClusterData(sMap, pointId);
+    summaryPoints.forEach(pointId => {
+        const pointData = groupedByPoint[pointId] || [];
+        const sData = getClusterData(sMap, pointId);
 
-                        if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
+        if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
 
-                        const groupedBySpecies = _.groupBy(pointData, 'species');
-                        const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
+        const groupedBySpecies = _.groupBy(pointData, 'species');
+        const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
 
-                        let pCount = 0;
-                        let pHeights = [];
-                        let pWinnerSpeciesList = [];
-                        let pMaxH = -1;
+        let pCount = 0;
+        let pHeights = [];
+        let pWinnerSpeciesList = [];
+        let pMaxH = -1;
 
-                        sortedSpeciesNames.forEach(speciesName => {
-                            const rows = groupedBySpecies[speciesName];
-                            const hs = rows.map(r => parseFloat(r.height)).filter(h => !isNaN(h));
-                            pCount += rows.length;
-                            pHeights.push(...hs);
-                            const mx = hs.length > 0 ? _.max(hs) : null;
-                            if (mx !== null) {
-                                if (mx > pMaxH) { pMaxH = mx; pWinnerSpeciesList = [speciesName]; }
-                                else if (mx === pMaxH) { pWinnerSpeciesList.push(speciesName); }
-                            }
-                        });
+        sortedSpeciesNames.forEach(speciesName => {
+            const rows = groupedBySpecies[speciesName];
+            const hs = rows.map(r => parseFloat(r.height)).filter(h => !isNaN(h));
+            pCount += rows.length;
+            pHeights.push(...hs);
+            const mx = hs.length > 0 ? _.max(hs) : null;
+            if (mx !== null) {
+                if (mx > pMaxH) { pMaxH = mx; pWinnerSpeciesList = [speciesName]; }
+                else if (mx === pMaxH) { pWinnerSpeciesList.push(speciesName); }
+            }
+        });
 
-                        const tMaxH = pHeights.length > 0 ? _.max(pHeights) : null;
-                        const tAvgH = pHeights.length > 0 ? _.mean(pHeights) : null;
-                        
-                        monitoringSummary.push({
-                            pointId, 
-                            landUse: getClusterValue(gMap, pointId), 
-                            fclass: sData.fclass || '',
-                            regen: sData.regen || '', ftype: sData.ftype || '', dclass: sData.dclass || '', aclas: sData.aclas || '',
-                            totalStems: pCount, maxHSpecies: pWinnerSpeciesList.join(', '),
-                            maxH: tMaxH !== null ? Math.round(tMaxH) : '', avgH: tAvgH !== null ? Math.round(tAvgH) : '',
-                            nonForestBasic: sData.nonForestBasic || '0', nonForestLarge: sData.nonForestLarge || '0'
-                        });
+        const tAvgH = pHeights.length > 0 ? _.mean(pHeights) : null;
+        
+        monitoringSummary.push({
+            pointId, 
+            landUse: getClusterValue(gMap, pointId), 
+            fclass: sData.fclass || '',
+            regen: sData.regen || '', ftype: sData.ftype || '', dclass: sData.dclass || '', aclas: sData.aclas || '',
+            totalStems: pCount, maxHSpecies: pWinnerSpeciesList.join(', '),
+            avgH: tAvgH !== null ? Math.round(tAvgH) : '',
+            nonForestBasic: sData.nonForestBasic || '0', nonForestLarge: sData.nonForestLarge || '0'
+        });
 
-                        let pointSpeciesList = [];
-                        sortedSpeciesNames.forEach(speciesName => {
-                            const speciesRows = groupedBySpecies[speciesName];
-                            pointSpeciesList.push({
-                                type: 'data', label: speciesName, pointId: pointId, count: speciesRows.length,
-                                winnerSpecies: '', maxHeight: '', avgHeight: ''
-                            });
-                        });
+        let pointSpeciesList = [];
+        sortedSpeciesNames.forEach(speciesName => {
+            const speciesRows = groupedBySpecies[speciesName];
+            pointSpeciesList.push({
+                type: 'data', label: speciesName, pointId: pointId, count: speciesRows.length,
+                winnerSpecies: '', avgHeight: ''
+            });
+        });
 
-                        const pTotalMaxH = pHeights.length > 0 ? _.max(pHeights) : null;
-                        const pTotalAvgH = pHeights.length > 0 ? _.mean(pHeights) : null;
-                        const subtotalRow = {
-                            type: 'subtotal', label: '소계', pointId, count: pCount,
-                            winnerSpecies: pWinnerSpeciesList.join(', '),
-                            maxHeight: pTotalMaxH !== null ? Math.round(pTotalMaxH) : '',
-                            avgHeight: pTotalAvgH !== null ? Math.round(pTotalAvgH) : ''
-                        };
+        speciesSummary.push({ type: 'header', label: pointId, pointId, count: '', winnerSpecies: '', avgHeight: '' });
+        speciesSummary.push(...pointSpeciesList);
+    });
 
-                        speciesSummary.push({ type: 'header', label: pointId, pointId, count: '', winnerSpecies: '', maxHeight: '', avgHeight: '' });
-                        speciesSummary.push(subtotalRow);
-                        speciesSummary.push(...pointSpeciesList);
-                        topWinnerSummary.push({ label: pointId, count: subtotalRow.count, winnerSpecies: subtotalRow.winnerSpecies, maxHeight: subtotalRow.maxHeight, avgHeight: subtotalRow.avgHeight });
-                    });
+    const largeTrees = trees.filter(item => {
+        const dbh = parseFloat(item.dbh);
+        return !isNaN(dbh) && dbh >= 30;
+    });
+    const largeTreesByPoint = _.groupBy(largeTrees, 'pointId');
+    const sortedLargeTrees = [];
+    summaryPoints.forEach(pointId => {
+        const treeList = largeTreesByPoint[pointId] || [];
+        const pointData = groupedByPoint[pointId] || [];
+        const sData = getClusterData(sMap, pointId);
+        if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
 
-                    const largeTrees = trees.filter(item => {
-                        const dbh = parseFloat(item.dbh);
-                        return !isNaN(dbh) && dbh >= 30;
-                    });
-                    const largeTreesByPoint = _.groupBy(largeTrees, 'pointId');
-                    const sortedLargeTrees = [];
-                    summaryPoints.forEach(pointId => {
-                        const treeList = largeTreesByPoint[pointId] || [];
-                        const pointData = groupedByPoint[pointId] || [];
-                        const sData = getClusterData(sMap, pointId);
-                        if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
+        if (treeList.length > 0) {
+            treeList.sort((a, b) => {
+                const dbhA = parseFloat(a.dbh) || 0;
+                const dbhB = parseFloat(b.dbh) || 0;
+                if (dbhA !== dbhB) return dbhB - dbhA;
+                return (a.species || '').localeCompare(b.species || '');
+            }).forEach(item => {
+                sortedLargeTrees.push({ 
+                    pointId: item.pointId, species: item.species, dbh: item.dbh, 
+                    combined: `${item.species}${item.dbh}`, dist: item.dist, azimuth: item.azimuth, note: item.note 
+                });
+            });
+        } else {
+            sortedLargeTrees.push({ pointId, species: '', dbh: '', combined: '', dist: '', azimuth: '', note: '' });
+        }
+    });
 
-                        if (treeList.length > 0) {
-                            treeList.sort((a, b) => {
-                                const dbhA = parseFloat(a.dbh) || 0;
-                                const dbhB = parseFloat(b.dbh) || 0;
-                                if (dbhA !== dbhB) return dbhB - dbhA;
-                                return (a.species || '').localeCompare(b.species || '');
-                            }).forEach(item => {
-                                sortedLargeTrees.push({ 
-                                    pointId: item.pointId, species: item.species, dbh: item.dbh, 
-                                    combined: `${item.species}${item.dbh}`, dist: item.dist, azimuth: item.azimuth, note: item.note 
-                                });
-                            });
-                        } else {
-                            sortedLargeTrees.push({ pointId, species: '', dbh: '', combined: '', dist: '', azimuth: '', note: '' });
-                        }
-                    });
-
-                    return { speciesSummary, topWinnerSummary, monitoringSummary, sortedLargeTrees };
-                };
+    return { speciesSummary, monitoringSummary, sortedLargeTrees };
+};
 
                 const readSheetData = (sheetKeywords, headerKeywords) => {
                     const actualSheetName = wb.SheetNames.find(name => {
@@ -363,48 +350,49 @@ function App() {
                     .then(res => res.arrayBuffer())
                     .then(ab => {
                         const wb2021 = XLSX.read(ab, { type: 'array' });
-                        const targetSheetName = wb2021.SheetNames.find(n => n.includes('임목조사표(2021)')) || 
-                                               wb2021.SheetNames.find(n => n.includes('2021')) || 
-                                               wb2021.SheetNames[0];
-                        const ws = wb2021.Sheets[targetSheetName];
-                        const data2021 = XLSX.utils.sheet_to_json(ws);
                         
-                        // 1. 전체 매핑 테이블 및 집락 기반 매핑 테이블 구축
+                        // 1) 2021DB요약 시트 읽기
+                        const dbSheetName = wb2021.SheetNames.find(n => n.includes('2021DB요약')) || wb2021.SheetNames[0];
+                        const dbData = XLSX.utils.sheet_to_json(wb2021.Sheets[dbSheetName]);
+                        const dbLookup = {};
                         const idMap = {};
-                        const clusterIdMap = {}; // 집락번호(12자리) 기반 폴백 매핑용
-                        data2021.forEach(row => {
+                        const clusterIdMap = {};
+
+                        dbData.forEach(row => {
                             const newPid = String(row['표본점번호'] || '').trim();
                             const oldPid = String(row['구표본점번호'] || '').trim();
-                            if (newPid && oldPid && newPid !== 'undefined') {
-                                idMap[newPid] = oldPid;
-                                // 집락번호(12자리)와 구 집락번호(8자리) 관계 저장
-                                if (newPid.length >= 12 && oldPid.length >= 8) {
-                                    clusterIdMap[newPid.slice(0, 12)] = oldPid.slice(0, 8);
+                            if (newPid) {
+                                dbLookup[newPid] = row;
+                                if (oldPid) {
+                                    idMap[newPid] = oldPid;
+                                    if (newPid.length >= 12 && oldPid.length >= 8) {
+                                        clusterIdMap[newPid.slice(0, 12)] = oldPid.slice(0, 8);
+                                    }
                                 }
                             }
                         });
 
-                        // 지능형 ID 정규화 함수 (매핑 파일에 없으면 집락번호로 추론)
+                        // 2) 임목조사표(2021) 시트 읽기 (트리 리스트 및 기타 정보용)
+                        const treeSheetName = wb2021.SheetNames.find(n => n.includes('임목조사표(2021)')) || wb2021.SheetNames[1] || wb2021.SheetNames[0];
+                        const treeData2021 = XLSX.utils.sheet_to_json(wb2021.Sheets[treeSheetName]);
+
+                        // 지능형 ID 정규화 함수
                         const getNormalizedId = (pid) => {
                             const sPid = String(pid).trim();
                             if (idMap[sPid]) return idMap[sPid];
-                            
-                            // 13자리 신규 번호인 경우 집락번호 기반으로 추론
                             if (sPid.length === 13) {
                                 const base = sPid.slice(0, 12);
-                                const pointNum = sPid.slice(-1);
-                                if (clusterIdMap[base]) return clusterIdMap[base] + pointNum;
+                                if (clusterIdMap[base]) return clusterIdMap[base] + sPid.slice(-1);
                             }
                             return sPid;
                         };
 
-                        // 2. 모든 데이터의 ID를 정규화 (중복 제거 및 통합)
+                        // 2. 모든 데이터의 ID를 정규화
                         treeProcessed.forEach(t => { t.pointId = getNormalizedId(t.pointId); });
                         
                         const mappedGeneralMap = {};
                         Object.keys(generalMap).forEach(k => {
                             const normalizedKey = getNormalizedId(k);
-                            // 경작지 데이터가 있으면 우선적으로 유지
                             if (!mappedGeneralMap[normalizedKey] || generalMap[k] === '경작지') {
                                 mappedGeneralMap[normalizedKey] = generalMap[k];
                             }
@@ -419,43 +407,49 @@ function App() {
                         // 3. 결과 요약 생성
                         const res = generateSummaries(treeProcessed, mappedGeneralMap, mappedStandMap);
                         
-                        // 경작지/비산림의 경우 산림 관련 데이터 강제 정제 (중복이 합쳐진 후 최종 처리)
                         res.monitoringSummary = res.monitoringSummary.map(row => {
                             if (row.landUse === '경작지' || row.ftype === '비산림') {
-                                return { ...row, fclass: '', regen: '', ftype: '비산림', totalStems: 0, maxHSpecies: '', maxH: '', avgH: '' };
+                                return { ...row, fclass: '', regen: '', ftype: '비산림', totalStems: 0, maxHSpecies: '', avgH: '' };
                             }
                             return row;
                         });
 
-                        // 요약 테이블에서도 중복 제거 및 정제된 데이터 반영
                         setData1(res.speciesSummary);
-                        setDataSummary(res.topWinnerSummary);
                         setDataMonitoring(res.monitoringSummary);
                         setData2(res.sortedLargeTrees);
 
-                        // 4. 과거(2021) 데이터 요약 (현재 파일과 관련된 집락만 추출)
+                        // 4. 과거(2021) 데이터 요약
                         const currentPoints = new Set(res.monitoringSummary.map(r => r.pointId));
-                        const filtered2021Rows = data2021.filter(row => {
-                            const oldId = String(row['구표본점번호'] || '').trim();
-                            const newId = String(row['표본점번호'] || '').trim();
+                        const filteredTree2021 = treeData2021.filter(item => {
+                            const oldId = String(item['구표본점번호'] || '').trim();
+                            const newId = String(item['표본점번호'] || '').trim();
                             return currentPoints.has(oldId) || currentPoints.has(newId);
                         });
 
-                        const treeProcessed2021 = filtered2021Rows.map(item => ({
+                        const treeProcessed2021 = filteredTree2021.map(item => ({
                             pointId: String(item['구표본점번호'] || item['표본점번호'] || '').trim(),
                             species: String(item['수종명'] || '').trim(),
                             height: item['수고'],
                             dbh: item['흉고직경'],
                             dist: item['거리(m)'],
-                            azimuth: item['방위각(º)'],
+                            azimuth: item['방위각(º)'] || item['방위각(°)'],
                             note: String(item['비고(개체목구분코드)'] || '').replace('undefined', '').trim()
                         }));
 
-                        const customPoints2021 = Array.from(new Set(filtered2021Rows.map(r => String(r['구표본점번호'] || r['표본점번호'] || '').trim()))).sort();
-                        const res2021 = generateSummaries(treeProcessed2021, {}, {}, customPoints2021.length > 0 ? customPoints2021 : null);
+                        const res2021 = generateSummaries(treeProcessed2021, {}, {}, Array.from(currentPoints).sort());
                         
+                        // 2021DB요약의 값을 소계(subtotal) 행에 강제 주입
+                        res2021.speciesSummary.forEach(row => {
+                            if (row.type === 'subtotal') {
+                                const dbInfo = dbLookup[row.pointId] || Object.values(dbLookup).find(val => val['구표본점번호'] === row.pointId);
+                                if (dbInfo) {
+                                    row.count = dbInfo['총본수'] !== undefined ? dbInfo['총본수'] : row.count;
+                                    row.avgHeight = dbInfo['평균수고'] !== undefined ? dbInfo['평균수고'] : row.avgHeight;
+                                }
+                            }
+                        });
+
                         setData2021_1(res2021.speciesSummary);
-                        setData2021_Summary(res2021.topWinnerSummary);
                         setData2021_2(res2021.sortedLargeTrees);
                         setLoading(false);
                     })
@@ -463,7 +457,6 @@ function App() {
                         console.error('2021 data error:', err);
                         const res = generateSummaries(treeProcessed, generalMap, standMap);
                         setData1(res.speciesSummary);
-                        setDataSummary(res.topWinnerSummary);
                         setDataMonitoring(res.monitoringSummary);
                         setData2(res.sortedLargeTrees);
                         setLoading(false);
@@ -503,12 +496,12 @@ function App() {
 
         // 1. 모니터링 요약
         const wsMonData = [
-            ['표본점번호', '토지이용', '임종', '갱신형태', '임상', '경급', '영급', '총본수', '최대 수고 수종명', '최대 수고', '평균 수고', '비산림면적(기본조사원)', '비산림면적(대경목조사원)']
+            ['표본점번호', '토지이용', '임종', '갱신형태', '임상', '경급', '영급', '총본수', '평균 수고', '비산림면적(기본조사원)', '비산림면적(대경목조사원)']
         ];
         dataMonitoring.forEach(row => {
             wsMonData.push([
                 row.pointId, row.landUse, row.fclass, row.regen, row.ftype, row.dclass, row.aclas,
-                row.totalStems, row.maxHSpecies, row.maxH, row.avgH, row.nonForestBasic, row.nonForestLarge
+                row.totalStems, row.avgH, row.nonForestBasic, row.nonForestLarge
             ]);
         });
         const wsMon = XLSX.utils.aoa_to_sheet(wsMonData);
@@ -518,41 +511,28 @@ function App() {
         // 2. 2021 출현종 요약
         if (data2021_1.length > 0) {
             const ws21_1Data = [
-                ['2021년 요약', '', '', '', ''],
-                ['레이블', '개수', '수종명', '수고 최대값', '평균값']
+                ['표본점번호 및 수종명', '본수(개)', '', '']
             ];
-            data2021_Summary.forEach(row => {
-                ws21_1Data.push([row.label, row.count, row.winnerSpecies, row.maxHeight, row.avgHeight]);
-            });
-            ws21_1Data.push(['', '', '', '', ''], ['', '', '', '', '']);
-            ws21_1Data.push(['레이블', '개수', '수종명', '수고 최대값', '평균값']);
             data2021_1.forEach(row => {
-                ws21_1Data.push([row.label, row.count, row.winnerSpecies, row.maxHeight, row.avgHeight]);
+                ws21_1Data.push([row.label, row.count, row.winnerSpecies, row.avgHeight]);
             });
             const ws21_1 = XLSX.utils.aoa_to_sheet(ws21_1Data);
             ws21_1['!cols'] = adjustWidths(ws21_1Data);
             XLSX.utils.book_append_sheet(wb, ws21_1, '2021 출현종 요약');
         }
 
-        // 3. 2026 출현종 요약 (순서 이동)
+        // 3. 2026 출현종 요약
         const ws1Data = [
-            ['요약', '', '', '', ''],
-            ['레이블', '개수', '수종명', '수고 최대값', '평균값']
+            ['표본점번호 및 수종명', '본수(개)', '', '']
         ];
-        dataSummary.forEach(row => {
-            ws1Data.push([row.label, row.count, row.winnerSpecies, row.maxHeight, row.avgHeight]);
-        });
-        ws1Data.push(['', '', '', '', '']);
-        ws1Data.push(['', '', '', '', '']);
-        ws1Data.push(['레이블', '개수', '수종명', '수고 최대값', '평균값']);
         data1.forEach(row => {
-            ws1Data.push([row.label, row.count, row.winnerSpecies, row.maxHeight, row.avgHeight]);
+            ws1Data.push([row.label, row.count, row.winnerSpecies, row.avgHeight]);
         });
         const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
         ws1['!cols'] = adjustWidths(ws1Data);
         XLSX.utils.book_append_sheet(wb, ws1, '2026 출현종 요약');
 
-        // 4. 2021 대경목 출현 요약 (복구)
+        // 4. 2021 대경목 출현 요약
         if (data2021_2.length > 0) {
             const ws21_2Data = [
                 ['표본점번호', '수종명', '흉고직경', '수종명 흉고직경', '거리', '방위', '비고']
@@ -715,8 +695,6 @@ function App() {
                                     <th>경급</th>
                                     <th>영급</th>
                                     <th>총본수</th>
-                                    <th>최대 수고 수종명</th>
-                                    <th>최대 수고</th>
                                     <th>평균 수고</th>
                                     <th>비산림면적(기본)</th>
                                     <th>비산림면적(대경목)</th>
@@ -733,8 +711,6 @@ function App() {
                                         <td>{row.dclass}</td>
                                         <td>{row.aclas}</td>
                                         <td>{row.totalStems}</td>
-                                        <td>{row.maxHSpecies}</td>
-                                        <td>{row.maxH}</td>
                                         <td>{row.avgH}</td>
                                         <td>{row.nonForestBasic}</td>
                                         <td>{row.nonForestLarge}</td>
@@ -745,42 +721,14 @@ function App() {
                     </div>
 
                     <div className={`table-container ${activeTab !== 'species' ? 'hidden' : ''}`}>
-                        {/* 상단 요약 테이블 */}
-                        <div className="mb-8 overflow-x-auto rounded-xl border border-blue-100 bg-blue-50/30 p-4">
-                            <h3 className="mb-3 font-bold text-blue-800">2026년 단위 표본점별 요약</h3>
-                            <table className="mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>레이블</th>
-                                        <th>개수</th>
-                                        <th>수종명</th>
-                                        <th>수고 최대값</th>
-                                        <th>평균값</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {dataSummary.map((row, idx) => (
-                                        <tr key={idx} className="bg-white">
-                                            <td>{row.label}</td>
-                                            <td>{row.count}</td>
-                                            <td>{row.winnerSpecies}</td>
-                                            <td>{row.maxHeight}</td>
-                                            <td>{row.avgHeight}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
                         {/* 메인 상세 테이블 */}
                         <table>
                             <thead>
                                 <tr>
-                                    <th>레이블</th>
-                                    <th>개수</th>
-                                    <th>수종명</th>
-                                    <th>수고 최대값</th>
-                                    <th>평균값</th>
+                                    <th>표본점번호 및 수종명</th>
+                                    <th>본수(개)</th>
+                                    <th></th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -791,7 +739,6 @@ function App() {
                                         </td>
                                         <td>{row.count}</td>
                                         <td>{row.winnerSpecies}</td>
-                                        <td>{row.maxHeight}</td>
                                         <td>{row.avgHeight}</td>
                                     </tr>
                                 ))}
@@ -829,39 +776,13 @@ function App() {
                     </div>
 
                     <div className={`table-container ${activeTab !== 'species2021' ? 'hidden' : ''}`}>
-                        <div className="mb-8 overflow-x-auto rounded-xl border border-amber-100 bg-amber-50/30 p-4">
-                            <h3 className="mb-3 font-bold text-amber-800">2021년 단위 표본점별 요약</h3>
-                            <table className="mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>레이블</th>
-                                        <th>개수</th>
-                                        <th>수종명</th>
-                                        <th>수고 최대값</th>
-                                        <th>평균값</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {data2021_Summary.map((row, idx) => (
-                                        <tr key={idx} className="bg-white">
-                                            <td>{row.label}</td>
-                                            <td>{row.count}</td>
-                                            <td>{row.winnerSpecies}</td>
-                                            <td>{row.maxHeight}</td>
-                                            <td>{row.avgHeight}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
                         <table>
                             <thead>
                                 <tr>
-                                    <th>레이블</th>
-                                    <th>개수</th>
-                                    <th>수종명</th>
-                                    <th>수고 최대값</th>
-                                    <th>평균값</th>
+                                    <th>표본점번호 및 수종명</th>
+                                    <th>본수(개)</th>
+                                    <th></th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -872,7 +793,6 @@ function App() {
                                         </td>
                                         <td>{row.count}</td>
                                         <td>{row.winnerSpecies}</td>
-                                        <td>{row.maxHeight}</td>
                                         <td>{row.avgHeight}</td>
                                     </tr>
                                 ))}
