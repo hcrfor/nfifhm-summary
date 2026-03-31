@@ -358,102 +358,116 @@ function App() {
                     }
                 });
 
-                // --- 2021자료.xlsx 연동 (집락번호 매칭) ---
-                const clusterIdFromFileName = file.name.match(/\d{12}/)?.[0] || '';
-                const baseClusterId = clusterIdFromFileName || (treeProcessed.length > 0 ? treeProcessed[0].pointId.slice(0, -1) : '');
-
-                if (baseClusterId) {
-                    fetch('/2021자료.xlsx')
-                        .then(res => res.arrayBuffer())
-                        .then(ab => {
-                            const wb2021 = XLSX.read(ab, { type: 'array' });
-                            
-                            // 2021자료에서는 '임목조사표(2021)' 또는 첫 번째 유효한 시트를 찾음
-                            const targetSheetName = wb2021.SheetNames.find(n => n.includes('임목조사표(2021)')) || 
-                                                  wb2021.SheetNames.find(n => n.includes('2021')) || 
-                                                  wb2021.SheetNames[0];
-                            
-                            const ws = wb2021.Sheets[targetSheetName];
-                            const data2021 = XLSX.utils.sheet_to_json(ws);
-                            
-                            const filtered2021Rows = data2021.filter(row => String(row['집락번호'] || '') === String(baseClusterId));
-                            
-                            // 매핑 테이블 생성 (신규 표본점번호 -> 구 표본점번호)
-                            const idMap = {};
-                            filtered2021Rows.forEach(row => {
-                                const newPid = String(row['표본점번호'] || '').trim();
-                                const oldPid = String(row['구표본점번호'] || '').trim();
-                                if (newPid && oldPid) idMap[newPid] = oldPid;
-                            });
-
-                            // --- 1. 현재(2026) 데이터의 ID를 구 번호로 변환 ---
-                            if (Object.keys(idMap).length > 0) {
-                                treeProcessed.forEach(t => { if (idMap[t.pointId]) t.pointId = idMap[t.pointId]; });
-                                
-                                const mappedGeneralMap = {};
-                                Object.keys(generalMap).forEach(k => {
-                                    const newKey = idMap[k] || k;
-                                    mappedGeneralMap[newKey] = generalMap[k];
-                                });
-                                
-                                const mappedStandMap = {};
-                                Object.keys(standMap).forEach(k => {
-                                    const newKey = idMap[k] || k;
-                                    mappedStandMap[newKey] = standMap[k];
-                                });
-
-                                const res = generateSummaries(treeProcessed, mappedGeneralMap, mappedStandMap);
-                                setData1(res.speciesSummary);
-                                setDataSummary(res.topWinnerSummary);
-                                setDataMonitoring(res.monitoringSummary);
-                                setData2(res.sortedLargeTrees);
-                            } else {
-                                const res = generateSummaries(treeProcessed, generalMap, standMap);
-                                setData1(res.speciesSummary);
-                                setDataSummary(res.topWinnerSummary);
-                                setDataMonitoring(res.monitoringSummary);
-                                setData2(res.sortedLargeTrees);
+                // --- 2021자료.xlsx 연동 (전역 매핑 테이블 구축) ---
+                fetch('/2021자료.xlsx')
+                    .then(res => res.arrayBuffer())
+                    .then(ab => {
+                        const wb2021 = XLSX.read(ab, { type: 'array' });
+                        const targetSheetName = wb2021.SheetNames.find(n => n.includes('임목조사표(2021)')) || 
+                                               wb2021.SheetNames.find(n => n.includes('2021')) || 
+                                               wb2021.SheetNames[0];
+                        const ws = wb2021.Sheets[targetSheetName];
+                        const data2021 = XLSX.utils.sheet_to_json(ws);
+                        
+                        // 1. 전체 매핑 테이블 및 집락 기반 매핑 테이블 구축
+                        const idMap = {};
+                        const clusterIdMap = {}; // 집락번호(12자리) 기반 폴백 매핑용
+                        data2021.forEach(row => {
+                            const newPid = String(row['표본점번호'] || '').trim();
+                            const oldPid = String(row['구표본점번호'] || '').trim();
+                            if (newPid && oldPid && newPid !== 'undefined') {
+                                idMap[newPid] = oldPid;
+                                // 집락번호(12자리)와 구 집락번호(8자리) 관계 저장
+                                if (newPid.length >= 12 && oldPid.length >= 8) {
+                                    clusterIdMap[newPid.slice(0, 12)] = oldPid.slice(0, 8);
+                                }
                             }
-
-                            // --- 2. 2021 과거 데이터 요약 (구 번호 적용) ---
-                            const treeProcessed2021 = filtered2021Rows.map(item => ({
-                                pointId: String(item['구표본점번호'] || item['표본점번호'] || '').trim(),
-                                species: String(item['수종명'] || '').trim(),
-                                height: item['수고'],
-                                dbh: item['흉고직경'],
-                                dist: item['거리(m)'],
-                                azimuth: item['방위각(º)'],
-                                note: String(item['비고(개체목구분코드)'] || '').replace('undefined', '').trim()
-                            }));
-
-                            // 2021 데이터의 구 집락번호를 찾아 범위 설정
-                            const oldBaseId = filtered2021Rows.length > 0 ? String(filtered2021Rows[0]['구집락번호'] || '').trim() : '';
-                            const customPoints2021 = oldBaseId ? [oldBaseId + '1', oldBaseId + '2', oldBaseId + '3', oldBaseId + '4'] : 
-                                                    [baseClusterId + '1', baseClusterId + '2', baseClusterId + '3', baseClusterId + '4'];
-
-                            const res2021 = generateSummaries(treeProcessed2021, {}, {}, customPoints2021);
-                            setData2021_1(res2021.speciesSummary);
-                            setData2021_Summary(res2021.topWinnerSummary);
-                            setData2021_2(res2021.sortedLargeTrees);
-                            setLoading(false);
-                        })
-                        .catch(err => {
-                            console.error('2021 data error:', err);
-                            const res = generateSummaries(treeProcessed, generalMap, standMap);
-                            setData1(res.speciesSummary);
-                            setDataSummary(res.topWinnerSummary);
-                            setDataMonitoring(res.monitoringSummary);
-                            setData2(res.sortedLargeTrees);
-                            setLoading(false);
                         });
-                } else {
-                    const res = generateSummaries(treeProcessed, generalMap, standMap);
-                    setData1(res.speciesSummary);
-                    setDataSummary(res.topWinnerSummary);
-                    setDataMonitoring(res.monitoringSummary);
-                    setData2(res.sortedLargeTrees);
-                    setLoading(false);
-                }
+
+                        // 지능형 ID 정규화 함수 (매핑 파일에 없으면 집락번호로 추론)
+                        const getNormalizedId = (pid) => {
+                            const sPid = String(pid).trim();
+                            if (idMap[sPid]) return idMap[sPid];
+                            
+                            // 13자리 신규 번호인 경우 집락번호 기반으로 추론
+                            if (sPid.length === 13) {
+                                const base = sPid.slice(0, 12);
+                                const pointNum = sPid.slice(-1);
+                                if (clusterIdMap[base]) return clusterIdMap[base] + pointNum;
+                            }
+                            return sPid;
+                        };
+
+                        // 2. 모든 데이터의 ID를 정규화 (중복 제거 및 통합)
+                        treeProcessed.forEach(t => { t.pointId = getNormalizedId(t.pointId); });
+                        
+                        const mappedGeneralMap = {};
+                        Object.keys(generalMap).forEach(k => {
+                            const normalizedKey = getNormalizedId(k);
+                            // 경작지 데이터가 있으면 우선적으로 유지
+                            if (!mappedGeneralMap[normalizedKey] || generalMap[k] === '경작지') {
+                                mappedGeneralMap[normalizedKey] = generalMap[k];
+                            }
+                        });
+                        
+                        const mappedStandMap = {};
+                        Object.keys(standMap).forEach(k => {
+                            const normalizedKey = getNormalizedId(k);
+                            mappedStandMap[normalizedKey] = standMap[k];
+                        });
+
+                        // 3. 결과 요약 생성
+                        const res = generateSummaries(treeProcessed, mappedGeneralMap, mappedStandMap);
+                        
+                        // 경작지/비산림의 경우 산림 관련 데이터 강제 정제 (중복이 합쳐진 후 최종 처리)
+                        res.monitoringSummary = res.monitoringSummary.map(row => {
+                            if (row.landUse === '경작지' || row.ftype === '비산림') {
+                                return { ...row, fclass: '', regen: '', ftype: '비산림', totalStems: 0, maxHSpecies: '', maxH: '', avgH: '' };
+                            }
+                            return row;
+                        });
+
+                        // 요약 테이블에서도 중복 제거 및 정제된 데이터 반영
+                        setData1(res.speciesSummary);
+                        setDataSummary(res.topWinnerSummary);
+                        setDataMonitoring(res.monitoringSummary);
+                        setData2(res.sortedLargeTrees);
+
+                        // 4. 과거(2021) 데이터 요약 (현재 파일과 관련된 집락만 추출)
+                        const currentPoints = new Set(res.monitoringSummary.map(r => r.pointId));
+                        const filtered2021Rows = data2021.filter(row => {
+                            const oldId = String(row['구표본점번호'] || '').trim();
+                            const newId = String(row['표본점번호'] || '').trim();
+                            return currentPoints.has(oldId) || currentPoints.has(newId);
+                        });
+
+                        const treeProcessed2021 = filtered2021Rows.map(item => ({
+                            pointId: String(item['구표본점번호'] || item['표본점번호'] || '').trim(),
+                            species: String(item['수종명'] || '').trim(),
+                            height: item['수고'],
+                            dbh: item['흉고직경'],
+                            dist: item['거리(m)'],
+                            azimuth: item['방위각(º)'],
+                            note: String(item['비고(개체목구분코드)'] || '').replace('undefined', '').trim()
+                        }));
+
+                        const customPoints2021 = Array.from(new Set(filtered2021Rows.map(r => String(r['구표본점번호'] || r['표본점번호'] || '').trim()))).sort();
+                        const res2021 = generateSummaries(treeProcessed2021, {}, {}, customPoints2021.length > 0 ? customPoints2021 : null);
+                        
+                        setData2021_1(res2021.speciesSummary);
+                        setData2021_Summary(res2021.topWinnerSummary);
+                        setData2021_2(res2021.sortedLargeTrees);
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error('2021 data error:', err);
+                        const res = generateSummaries(treeProcessed, generalMap, standMap);
+                        setData1(res.speciesSummary);
+                        setDataSummary(res.topWinnerSummary);
+                        setDataMonitoring(res.monitoringSummary);
+                        setData2(res.sortedLargeTrees);
+                        setLoading(false);
+                    });
             } catch (err) {
                 console.error(err);
                 setError(err.message || '파일 처리 중 오류가 발생했습니다.');
