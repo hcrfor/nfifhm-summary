@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import _ from 'lodash';
 
@@ -11,10 +12,11 @@ function App() {
     const [data2021_1, setData2021_1] = useState([]); // 2021 출현종 요약
     const [data2021_Summary, setData2021_Summary] = useState([]); // 2021 출현종 요약 상단 '요약' 섹션
     const [data2021_2, setData2021_2] = useState([]); // 2021 대경목 출현 요약
+    const [dataComparison, setDataComparison] = useState([]); // 모니터링비교_출현수종 추가
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [fileName, setFileName] = useState('');
-    const [activeTab, setActiveTab] = useState('monitoring'); // monitoring | species | largeTrees | species2021 | largeTrees2021
+    const [activeTab, setActiveTab] = useState('monitoring'); // monitoring | species | largeTrees | species2021 | largeTrees2021 | comparison
     const [fileType, setFileType] = useState('NFI'); // NFI | FHM
     const fileInputRef = useRef(null);
     const fhmFileInputRef = useRef(null);
@@ -451,6 +453,62 @@ function App() {
 
                         setData2021_1(res2021.speciesSummary);
                         setData2021_2(res2021.sortedLargeTrees);
+
+                        // 5. 모니터링비교_출현수종 생성 (전차기 수종 vs 현차기 수종 비교 분석)
+                        const comparisonData = [];
+                        const sortedPids = Array.from(currentPoints).sort();
+
+                        sortedPids.forEach(pid => {
+                            const prevSpecies = res2021.speciesSummary
+                                .filter(s => s.pointId === pid && s.type === 'data')
+                                .map(s => s.label)
+                                .sort((a, b) => a.localeCompare(b));
+                            const currSpecies = res.speciesSummary
+                                .filter(s => s.pointId === pid && s.type === 'data')
+                                .map(s => s.label)
+                                .sort((a, b) => a.localeCompare(b));
+
+                            const currUsed = new Set();
+                            const plotRows = [];
+
+                            // 1단계: 전차기(2021) 기준으로 매칭 시도
+                            prevSpecies.forEach(pName => {
+                                // 정확한 일치 확인
+                                if (currSpecies.includes(pName)) {
+                                    plotRows.push({ prev: pName, curr: pName });
+                                    currUsed.add(pName);
+                                } else {
+                                    // 매칭되는 현차기 수종이 없음
+                                    plotRows.push({ prev: pName, curr: '-' });
+                                }
+                            });
+
+                            // 2단계: 현차기에만 새로 나타난 수종들을 하단에 추가 (가나다 순)
+                            const newlyAdded = currSpecies.filter(c => !currUsed.has(c)).sort((a, b) => a.localeCompare(b));
+                            newlyAdded.forEach(cName => {
+                                plotRows.push({ prev: '', curr: cName });
+                            });
+
+                            // 3단계: 두 차기 모두 데이터가 없는 경우 (이미지의 276039603 케이스)
+                            if (plotRows.length === 0) {
+                                plotRows.push({ prev: '-', curr: '-' });
+                            }
+
+                            // 집락번호 및 전체 리스트에 추가
+                            plotRows.forEach(item => {
+                                comparisonData.push({
+                                    clusterId: String(pid).length >= 5 ? String(pid).slice(0, -1) : pid,
+                                    pointId: pid,
+                                    prev: item.prev,
+                                    curr: item.curr,
+                                    cause: '',
+                                    subCause: '',
+                                    note: ''
+                                });
+                            });
+                        });
+
+                        setDataComparison(comparisonData);
                         setLoading(false);
                     })
                     .catch(err => {
@@ -470,97 +528,169 @@ function App() {
         reader.readAsArrayBuffer(file);
     };
 
-    const downloadExcel = () => {
-        const wb = XLSX.utils.book_new();
-
-        // 열 넓이 자동 조절 헬퍼 함수
-        const adjustWidths = (data) => {
-            if (!data || data.length === 0) return [];
-            const colCounts = data[0].length;
-            const widths = Array(colCounts).fill(0);
-
-            data.forEach(row => {
-                row.forEach((val, i) => {
-                    const str = String(val || '');
-                    let len = 0;
-                    for (let j = 0; j < str.length; j++) {
-                        if (str.charCodeAt(j) > 127) len += 2;
-                        else len += 1;
-                    }
-                    if (len > widths[i]) widths[i] = len;
-                });
-            });
-
-            return widths.map(w => ({ wch: w + 2 })); // 여백 2 추가
+    const downloadExcel = async () => {
+        const workbook = new ExcelJS.Workbook();
+        
+        // 헬퍼: 테두리 스타일
+        const thinBorder = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
         };
 
-        // 1. 모니터링 요약
-        const wsMonData = [
-            ['표본점번호', '토지이용', '임종', '갱신형태', '임상', '경급', '영급', '총본수', '평균 수고', '비산림면적(기본조사원)', '비산림면적(대경목조사원)']
-        ];
+        // 헬퍼: 열 너비 자동 조절
+        const autoFit = (ws) => {
+            ws.columns.forEach(column => {
+                let maxColumnLength = 0;
+                column.eachCell({ includeEmpty: true }, cell => {
+                    const cellValue = cell.value ? cell.value.toString() : '';
+                    let L = 0;
+                    for (let i = 0; i < cellValue.length; i++) {
+                        L += (cellValue.charCodeAt(i) > 127 ? 2.1 : 1.1);
+                    }
+                    if (L > maxColumnLength) maxColumnLength = L;
+                });
+                column.width = maxColumnLength < 10 ? 10 : maxColumnLength + 2;
+            });
+        };
+
+        // 1. 모니터링 요약 시트
+        const wsMon = workbook.addWorksheet('모니터링 요약');
+        const monHeader = ['표본점번호', '토지이용', '임종', '갱신형태', '임상', '경급', '영급', '총본수', '평균 수고', '비산림면적(기본조사원)', '비산림면적(대경목조사원)'];
+        const monHeaderRow = wsMon.addRow(monHeader);
+        monHeaderRow.eachCell((cell, colNumber) => {
+            cell.font = { bold: true };
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            // 이미지처럼 홀수/짝수 열의 바탕색을 교차 적용 (홀수: 연한 녹색, 짝수: 흰색)
+            const bgColor = colNumber % 2 === 1 ? 'FFE8F5E9' : 'FFFFFFFF';
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+            cell.border = thinBorder;
+        });
+
         dataMonitoring.forEach(row => {
-            wsMonData.push([
+            const r = wsMon.addRow([
                 row.pointId, row.landUse, row.fclass, row.regen, row.ftype, row.dclass, row.aclas,
                 row.totalStems, row.avgH, row.nonForestBasic, row.nonForestLarge
             ]);
+            r.eachCell((cell, colNumber) => { 
+                cell.border = thinBorder; 
+                cell.alignment = { vertical: 'middle' }; 
+                // 헤더와 동일하게 홀수 열에만 바탕색 적용
+                if (colNumber % 2 === 1) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
+                }
+            });
         });
-        const wsMon = XLSX.utils.aoa_to_sheet(wsMonData);
-        wsMon['!cols'] = adjustWidths(wsMonData);
-        XLSX.utils.book_append_sheet(wb, wsMon, '모니터링 요약');
+        autoFit(wsMon);
 
-        // 2. 2021 출현종 요약
+        // 2. 모니터링비교_출현수종 (핵심 스타일링 시트)
+        if (dataComparison.length > 0) {
+            const wsComp = workbook.addWorksheet('모니터링비교_출현수종');
+            const compHeader = ['집락번호', '표본점번호', '전차기', '현차기', '변화원인', '세부변화원인', '비고'];
+            const hRow = wsComp.addRow(compHeader);
+            
+            hRow.eachCell(cell => {
+                cell.font = { bold: true };
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2DCDB' } }; // 연한 핑크색
+                cell.border = thinBorder;
+            });
+
+            let lastPid = null;
+            let groupIdx = 0;
+            
+            dataComparison.forEach((item, idx) => {
+                if (item.pointId !== lastPid) {
+                    groupIdx++;
+                    lastPid = item.pointId;
+                }
+                
+                const row = wsComp.addRow([
+                    item.clusterId, item.pointId, item.prev, item.curr, 
+                    item.cause, item.subCause, item.note
+                ]);
+                
+                row.eachCell((cell, colNumber) => {
+                    cell.border = thinBorder;
+                    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    
+                    // 짝수 번째 표본점 그룹에 배경색 적용 (이미지처럼)
+                    if (groupIdx % 2 === 0) {
+                        cell.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: 'FFE8F5E9' } // 아주 연한 녹색
+                        };
+                    }
+                });
+            });
+
+            // 셀 병합 로직 (집락번호 & 표본점번호)
+            let clusterStart = 2;
+            let pointStart = 2;
+            for (let i = 0; i < dataComparison.length; i++) {
+                const isLast = i === dataComparison.length - 1;
+                const currentRow = i + 2;
+
+                if (isLast || dataComparison[i].clusterId !== dataComparison[i + 1].clusterId) {
+                    if (currentRow > clusterStart) wsComp.mergeCells(clusterStart, 1, currentRow, 1);
+                    clusterStart = currentRow + 1;
+                }
+                if (isLast || dataComparison[i].pointId !== dataComparison[i + 1].pointId) {
+                    if (currentRow > pointStart) wsComp.mergeCells(pointStart, 2, currentRow, 2);
+                    pointStart = currentRow + 1;
+                }
+            }
+            autoFit(wsComp);
+        }
+
+        // 3. 2021 출현종 요약
         if (data2021_1.length > 0) {
-            const ws21_1Data = [
-                ['표본점번호 및 수종명', '본수(개)', '', '']
-            ];
+            const ws21 = workbook.addWorksheet('2021 출현종 요약');
+            ws21.addRow(['표본점번호 및 수종명', '본수(개)', '', '']).font = { bold: true };
             data2021_1.forEach(row => {
-                ws21_1Data.push([row.label, row.count, row.winnerSpecies, row.avgHeight]);
+                ws21.addRow([row.label, row.count, row.winnerSpecies, row.avgHeight]);
             });
-            const ws21_1 = XLSX.utils.aoa_to_sheet(ws21_1Data);
-            ws21_1['!cols'] = adjustWidths(ws21_1Data);
-            XLSX.utils.book_append_sheet(wb, ws21_1, '2021 출현종 요약');
+            autoFit(ws21);
         }
 
-        // 3. 2026 출현종 요약
-        const ws1Data = [
-            ['표본점번호 및 수종명', '본수(개)', '', '']
-        ];
+        // 4. 2026 출현종 요약
+        const ws26 = workbook.addWorksheet('2026 출현종 요약');
+        ws26.addRow(['표본점번호 및 수종명', '본수(개)', '', '']).font = { bold: true };
         data1.forEach(row => {
-            ws1Data.push([row.label, row.count, row.winnerSpecies, row.avgHeight]);
+            ws26.addRow([row.label, row.count, row.winnerSpecies, row.avgHeight]);
         });
-        const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
-        ws1['!cols'] = adjustWidths(ws1Data);
-        XLSX.utils.book_append_sheet(wb, ws1, '2026 출현종 요약');
+        autoFit(ws26);
 
-        // 4. 2021 대경목 출현 요약
+        // 5. 2021 대경목 출현 요약
         if (data2021_2.length > 0) {
-            const ws21_2Data = [
-                ['표본점번호', '수종명', '흉고직경', '수종명 흉고직경', '거리', '방위', '비고']
-            ];
+            const ws21L = workbook.addWorksheet('2021 대경목 출현 요약');
+            ws21L.addRow(['표본점번호', '수종명', '흉고직경', '수종명 흉고직경', '거리', '방위', '비고']).font = { bold: true };
             data2021_2.forEach(row => {
-                ws21_2Data.push([row.pointId, row.species, row.dbh, row.combined, row.dist, row.azimuth, row.note]);
+                ws21L.addRow([row.pointId, row.species, row.dbh, row.combined, row.dist, row.azimuth, row.note]);
             });
-            const ws21_2 = XLSX.utils.aoa_to_sheet(ws21_2Data);
-            ws21_2['!cols'] = adjustWidths(ws21_2Data);
-            XLSX.utils.book_append_sheet(wb, ws21_2, '2021 대경목 출현 요약');
+            autoFit(ws21L);
         }
 
-        // 5. 2026 대경목 출현 요약 (현재)
-        const ws2Data = [
-            ['표본점번호', '수종명', '흉고직경', '수종명 흉고직경', '거리', '방위', '비고']
-        ];
+        // 6. 2026 대경목 출현 요약
+        const ws26L = workbook.addWorksheet('2026 대경목 출현 요약');
+        ws26L.addRow(['표본점번호', '수종명', '흉고직경', '수종명 흉고직경', '거리', '방위', '비고']).font = { bold: true };
         data2.forEach(row => {
-            ws2Data.push([row.pointId, row.species, row.dbh, row.combined, row.dist, row.azimuth, row.note]);
+            ws26L.addRow([row.pointId, row.species, row.dbh, row.combined, row.dist, row.azimuth, row.note]);
         });
-        const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
-        ws2['!cols'] = adjustWidths(ws2Data);
-        XLSX.utils.book_append_sheet(wb, ws2, '2026 대경목 출현 요약');
+        autoFit(ws26L);
 
-        // 파일명 생성 로직: 업로드된 원본 파일명 활용
-        const originalBaseName = fileName.replace(/\.[^/.]+$/, ""); // 확장자 제거
-        const finalFileName = `${originalBaseName}_모니터링 요약.xlsx`;
-
-        XLSX.writeFile(wb, finalFileName);
+        // 파일 다운로드 실행
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        const originalBaseName = fileName.replace(/\.[^/.]+$/, "");
+        anchor.download = `${originalBaseName}_모니터링 요약.xlsx`;
+        anchor.click();
+        window.URL.revokeObjectURL(url);
     };
 
     return (
@@ -658,6 +788,12 @@ function App() {
                             모니터링 요약
                         </div>
                         <div
+                            className={`tab ${activeTab === 'comparison' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('comparison')}
+                        >
+                            모니터링비교_출현수종
+                        </div>
+                        <div
                             className={`tab ${activeTab === 'species2021' ? 'active' : ''}`}
                             onClick={() => setActiveTab('species2021')}
                         >
@@ -703,17 +839,17 @@ function App() {
                             <tbody>
                                 {dataMonitoring.map((row, idx) => (
                                     <tr key={idx}>
-                                        <td>{row.pointId}</td>
+                                        <td style={{ backgroundColor: '#E8F5E9' }}>{row.pointId}</td>
                                         <td>{row.landUse}</td>
-                                        <td>{row.fclass}</td>
+                                        <td style={{ backgroundColor: '#E8F5E9' }}>{row.fclass}</td>
                                         <td>{row.regen}</td>
-                                        <td>{row.ftype}</td>
+                                        <td style={{ backgroundColor: '#E8F5E9' }}>{row.ftype}</td>
                                         <td>{row.dclass}</td>
-                                        <td>{row.aclas}</td>
+                                        <td style={{ backgroundColor: '#E8F5E9' }}>{row.aclas}</td>
                                         <td>{row.totalStems}</td>
-                                        <td>{row.avgH}</td>
+                                        <td style={{ backgroundColor: '#E8F5E9' }}>{row.avgH}</td>
                                         <td>{row.nonForestBasic}</td>
-                                        <td>{row.nonForestLarge}</td>
+                                        <td style={{ backgroundColor: '#E8F5E9' }}>{row.nonForestLarge}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -796,6 +932,43 @@ function App() {
                                         <td>{row.avgHeight}</td>
                                     </tr>
                                 ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className={`table-container ${activeTab !== 'comparison' ? 'hidden' : ''}`}>
+                        <table className="summary-table border-collapse w-full">
+                            <thead style={{ backgroundColor: '#F2DCDB' }}>
+                                <tr>
+                                    <th>집락번호</th>
+                                    <th>표본점번호</th>
+                                    <th>전차기</th>
+                                    <th>현차기</th>
+                                    <th>변화원인</th>
+                                    <th>세부변화원인</th>
+                                    <th>비고</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {dataComparison.map((row, idx) => {
+                                    const isFirstCluster = idx === 0 || dataComparison[idx - 1].clusterId !== row.clusterId;
+                                    const isFirstPoint = idx === 0 || dataComparison[idx - 1].pointId !== row.pointId;
+                                    return (
+                                        <tr key={idx}>
+                                            <td style={{ verticalAlign: 'top', fontWeight: isFirstCluster ? 'bold' : 'normal', color: isFirstCluster ? 'inherit' : 'transparent' }}>
+                                                {isFirstCluster ? row.clusterId : ''}
+                                            </td>
+                                            <td style={{ verticalAlign: 'top', fontWeight: isFirstPoint ? 'bold' : 'normal', color: isFirstPoint ? 'inherit' : 'transparent' }}>
+                                                {isFirstPoint ? row.pointId : ''}
+                                            </td>
+                                            <td>{row.prev}</td>
+                                            <td>{row.curr}</td>
+                                            <td>{row.cause}</td>
+                                            <td>{row.subCause}</td>
+                                            <td>{row.note}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
