@@ -144,7 +144,8 @@ function App() {
         const pointData = groupedByPoint[pointId] || [];
         const sData = getClusterData(sMap, pointId);
 
-        if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
+        // 데이터가 없어도 표본점 번호는 출력하기 위해 건너뛰기 로직 삭제
+        // if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
 
         const groupedBySpecies = _.groupBy(pointData, 'species');
         const sortedSpeciesNames = Object.keys(groupedBySpecies).sort((a, b) => a.localeCompare(b));
@@ -201,7 +202,8 @@ function App() {
         const treeList = largeTreesByPoint[pointId] || [];
         const pointData = groupedByPoint[pointId] || [];
         const sData = getClusterData(sMap, pointId);
-        if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
+        // 대경목 요약에서도 데이터 유무와 상관없이 표본점 번호 유지를 위해 건너뛰기 로직 삭제
+        // if (pointData.length === 0 && !sData.fclass && !sData.ftype) return;
 
         if (treeList.length > 0) {
             treeList.sort((a, b) => {
